@@ -16,12 +16,11 @@ jobs:
           git clone --depth 1 https://github.com/theos/theos.git $HOME/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
-      - name: Install iPhoneOS SDK
+      - name: Show Xcode SDK
         run: |
-          curl -sLO https://github.com/theos/sdks/archive/refs/heads/master.zip
-          unzip -q master.zip
-          mv sdks-master/iphoneos.sdk $HOME/theos/sdks/
-          rm -rf master.zip sdks-master
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-path
+          echo "SDKROOT=$(xcrun --sdk iphoneos --show-sdk-path)" >> $GITHUB_ENV
 
       - name: Create Info.plist
         run: |
@@ -31,18 +30,12 @@ jobs:
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
-          	<key>CFBundleDevelopmentRegion</key>
-          	<string>en</string>
           	<key>CFBundleDisplayName</key>
           	<string>声音路由</string>
           	<key>CFBundleExecutable</key>
           	<string>RCSpeakerToggle</string>
           	<key>CFBundleIdentifier</key>
           	<string>com.rc.control-center.RCSpeakerToggle</string>
-          	<key>CFBundleInfoDictionaryVersion</key>
-          	<string>6.0</string>
-          	<key>CFBundleName</key>
-          	<string>RCSpeakerToggle</string>
           	<key>CFBundlePackageType</key>
           	<string>BNDL</string>
           	<key>CFBundleShortVersionString</key>

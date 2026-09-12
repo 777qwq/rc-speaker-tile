@@ -1,0 +1,9 @@
+Package: com.rc.speaker.cctoggle
+Name: RCSpeaker CC Toggle
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: 声音路由切换助手 - 控制中心磁贴（依赖声音路由切换助手主体与CCSupport）
+Depends: mobilesubstrate, com.opa334.ccsupport
+Maintainer: RC
+Author: RC
+Section: Tweaks

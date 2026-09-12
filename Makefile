@@ -10,7 +10,7 @@ BUNDLE_NAME = RCSpeakerToggle
 
 RCSpeakerToggle_FILES = RCSpeakerToggle.x
 RCSpeakerToggle_FRAMEWORKS = UIKit CoreGraphics
-RCSpeakerToggle_PRIVATE_FRAMEWORKS = ControlCenterUIKit
+RCSpeakerToggle_LDFLAGS = -undefined dynamic_lookup
 RCSpeakerToggle_INSTALL_PATH = /Library/ControlCenter/Bundles
 RCSpeakerToggle_CFLAGS = -fobjc-arc
 

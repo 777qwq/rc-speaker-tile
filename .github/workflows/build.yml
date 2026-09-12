@@ -14,7 +14,7 @@ jobs:
       - name: Install theos
         run: |
           git clone --depth 1 https://github.com/theos/theos.git $HOME/theos
-          git clone --depth 1 https://github.com/ProcursusTeam/dm.pl /tmp/dm.pl
+          git clone --depth 1 https://github.com/theos/dm.pl /tmp/dm.pl
           cp /tmp/dm.pl/dm.pl $HOME/theos/bin/dm.pl && chmod +x $HOME/theos/bin/dm.pl
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 

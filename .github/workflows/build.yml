@@ -1,0 +1,85 @@
+name: Build CC Tile
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install theos
+        run: |
+          git clone --depth 1 https://github.com/theos/theos.git $HOME/theos
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+
+      - name: Install iPhoneOS SDK
+        run: |
+          curl -sLO https://github.com/theos/sdks/archive/refs/heads/master.zip
+          unzip -q master.zip
+          mv sdks-master/iphoneos.sdk $HOME/theos/sdks/
+          rm -rf master.zip sdks-master
+
+      - name: Create Info.plist
+        run: |
+          mkdir -p Resources
+          cat > Resources/Info.plist <<'PLISTEOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+          	<key>CFBundleDevelopmentRegion</key>
+          	<string>en</string>
+          	<key>CFBundleDisplayName</key>
+          	<string>声音路由</string>
+          	<key>CFBundleExecutable</key>
+          	<string>RCSpeakerToggle</string>
+          	<key>CFBundleIdentifier</key>
+          	<string>com.rc.control-center.RCSpeakerToggle</string>
+          	<key>CFBundleInfoDictionaryVersion</key>
+          	<string>6.0</string>
+          	<key>CFBundleName</key>
+          	<string>RCSpeakerToggle</string>
+          	<key>CFBundlePackageType</key>
+          	<string>BNDL</string>
+          	<key>CFBundleShortVersionString</key>
+          	<string>1.0.0</string>
+          	<key>CFBundleSupportedPlatforms</key>
+          	<array>
+          		<string>iPhoneOS</string>
+          	</array>
+          	<key>CFBundleVersion</key>
+          	<string>1</string>
+          	<key>MinimumOSVersion</key>
+          	<string>15.0</string>
+          	<key>ModuleSize</key>
+          	<dict>
+          		<key>columns</key>
+          		<string>1</string>
+          		<key>rows</key>
+          		<string>1</string>
+          	</dict>
+          	<key>NSPrincipalClass</key>
+          	<string>RCSpeakerToggleModule</string>
+          	<key>UIDeviceFamily</key>
+          	<array>
+          		<integer>1</integer>
+          		<integer>2</integer>
+          	</array>
+          </dict>
+          </plist>
+          PLISTEOF
+
+      - name: Build package
+        run: make package FINALPACKAGE=1
+        env:
+          THEOS_PACKAGE_SCHEME: rootless
+
+      - name: Upload deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-speaker-cc-tile
+          path: packages/*.deb

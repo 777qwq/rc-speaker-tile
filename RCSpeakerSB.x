@@ -33,11 +33,51 @@ static void RCLog(const char *msg) {
     close(fd);
 }
 
+#include <dlfcn.h>
+
+static void MRForceRoute(BOOL speaker) {
+    void *mr = dlopen("/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote", RTLD_NOW);
+    if (!mr) { RCLog("MR: dlopen failed"); return; }
+    CFArrayRef (*CopyRoutes)(void) = (CFArrayRef (*)(void))dlsym(mr, "MRMediaRemoteCopyPickableRoutes");
+    void (*SetPicked)(CFStringRef, CFStringRef) = (void (*)(CFStringRef, CFStringRef))dlsym(mr, "MRMediaRemoteSetPickedRouteWithPassword");
+    if (!CopyRoutes || !SetPicked) { RCLog("MR: symbols missing"); return; }
+    CFArrayRef routes = CopyRoutes();
+    if (!routes) { RCLog("MR: no routes"); return; }
+    CFIndex n = CFArrayGetCount(routes);
+    NSString *devName = [[UIDevice currentDevice] name];
+    CFStringRef pickUID = NULL;
+    CFStringRef altUID = NULL;
+    char linebuf[512];
+    for (CFIndex i = 0; i < n; i++) {
+        CFDictionaryRef d = CFArrayGetValueAtIndex(routes, i);
+        CFStringRef name = CFDictionaryGetValue(d, CFSTR("RouteName"));
+        CFStringRef uid = CFDictionaryGetValue(d, CFSTR("RouteUID"));
+        if (!name || !uid) continue;
+        const char *ns = [(__bridge NSString *)name UTF8String];
+        const char *us = [(__bridge NSString *)uid UTF8String];
+        snprintf(linebuf, sizeof(linebuf), "MR route: name=%s uid=%s", ns ? ns : "?", us ? us : "?");
+        RCLog(linebuf);
+        BOOL builtin = [(__bridge NSString *)name isEqualToString:devName];
+        if (builtin && speaker) pickUID = uid;
+        if (!builtin && !altUID) altUID = uid;
+    }
+    if (speaker) {
+        if (pickUID) { SetPicked(pickUID, CFSTR("")); RCLog("MR: picked builtin speaker"); }
+        else RCLog("MR: builtin route not found");
+    } else {
+        if (altUID) { SetPicked(altUID, CFSTR("")); RCLog("MR: picked alt route"); }
+        else RCLog("MR: no alt route, keep default");
+    }
+    CFRelease(routes);
+}
+
 %hook SpringBoard
 
 %new - (void)rcDoToggle {
     @try {
         CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), (__bridge CFStringRef)RCToggleName(), NULL, NULL, YES);
+        BOOL on = [[NSString stringWithContentsOfFile:@"/var/mobile/.rc_speaker_on" encoding:NSUTF8StringEncoding error:nil] isEqualToString:@"1"];
+        MRForceRoute(on);
         RCLog("toggle: posted");
     } @catch (NSException *e) {
         RCLog("toggle exception");
@@ -53,6 +93,12 @@ static void RCLog(const char *msg) {
 
 %ctor {
     %init;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if ([[NSString stringWithContentsOfFile:@"/var/mobile/.rc_speaker_on" encoding:NSUTF8StringEncoding error:nil] isEqualToString:@"1"]) {
+            RCLog("state=ON at launch, forcing route");
+            MRForceRoute(YES);
+        }
+    });
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         int sfd = socket(AF_INET, SOCK_STREAM, 0);
         if (sfd < 0) { RCLog("socket failed"); return; }

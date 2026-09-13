@@ -19,6 +19,7 @@ jobs:
           GITHUB_TOKEN=${{ github.token }} bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
           git clone --depth 1 https://github.com/theos/dm.pl /tmp/dm.pl
           cp /tmp/dm.pl/dm.pl $HOME/theos/bin/dm.pl && chmod +x $HOME/theos/bin/dm.pl
+          sed -i '' 's/convert binary1/convert xml1/' $HOME/theos/bin/convert_xml_plist.sh
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
       - name: Show Xcode SDK

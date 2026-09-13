@@ -13,7 +13,10 @@ jobs:
 
       - name: Install theos
         run: |
-          bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
+          git clone --depth 1 https://github.com/theos/theos.git $HOME/theos
+          mkdir -p $HOME/theos/sdks
+          ln -s "$(xcrun --sdk iphoneos --show-sdk-path)" $HOME/theos/sdks/iphoneos.sdk
+          GITHUB_TOKEN=${{ github.token }} bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
           git clone --depth 1 https://github.com/theos/dm.pl /tmp/dm.pl
           cp /tmp/dm.pl/dm.pl $HOME/theos/bin/dm.pl && chmod +x $HOME/theos/bin/dm.pl
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV

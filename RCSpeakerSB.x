@@ -22,6 +22,7 @@ static NSString *RCToggleName(void) {
 #include <mach-o/dyld.h>
 
 static void RCLog(const char *msg) {
+    return; // logging disabled
     int fd = open("/var/mobile/rc_debug531.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
     if (fd < 0) return;
     if (lseek(fd, 0, SEEK_END) > 200 * 1024) { close(fd); fd = open("/var/mobile/rc_debug.log", O_WRONLY | O_CREAT | O_TRUNC, 0644); if (fd < 0) return; }

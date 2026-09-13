@@ -161,19 +161,51 @@ static OSStatus hook_ASActive1(int active) {
     return r;
 }
 
-static BOOL g_cHooked = NO;
+static void *g_hookedPtrs[8] = {0};
+static int g_hookedCount = 0;
+
+static BOOL AlreadyHooked(void *p) {
+    for (int i = 0; i < g_hookedCount; i++) if (g_hookedPtrs[i] == p) return YES;
+    return NO;
+}
+static void MarkHooked(void *p) { if (g_hookedCount < 8) g_hookedPtrs[g_hookedCount++] = p; }
 
 static void TryInstallCHook(void) {
-    if (g_cHooked) return;
-    void *tb = dlopen("/System/Library/Frameworks/AudioToolbox.framework/AudioToolbox", RTLD_NOW);
-    if (!tb) { AppLog("AudioToolbox dlopen failed"); return; }
     void *ms = dlsym(RTLD_DEFAULT, "MSHookFunction");
-    if (!ms) { AppLog("MSHookFunction not available"); return; }
+    if (!ms) return;
     void (*_MSHookFunction)(void *, void *, void **) = (void (*)(void *, void *, void **))ms;
-    void *fn2 = dlsym(tb, "AudioSessionSetActiveWithOptions");
-    if (fn2) { _MSHookFunction(fn2, (void *)hook_ASActive2, (void **)&orig_ASActive2); g_cHooked = YES; AppLog("C hook: AudioSessionSetActiveWithOptions installed"); }
-    void *fn1 = dlsym(tb, "AudioSessionSetActive");
-    if (fn1) { _MSHookFunction(fn1, (void *)hook_ASActive1, (void **)&orig_ASActive1); AppLog("C hook: AudioSessionSetActive installed"); }
+
+    const char *libs[] = {
+        "/System/Library/Frameworks/AudioToolbox.framework/AudioToolbox",
+        "/System/Library/PrivateFrameworks/AudioSession.framework/AudioSession",
+        "/System/Library/Frameworks/MediaToolbox.framework/MediaToolbox",
+        NULL
+    };
+    const char *syms2[] = { "AudioSessionSetActiveWithOptions", "AudioSessionSetActiveWithProperties", NULL };
+    for (int li = 0; libs[li]; li++) {
+        void *tb = dlopen(libs[li], RTLD_NOW);
+        if (!tb) continue;
+        for (int si = 0; syms2[si]; si++) {
+            void *fn = dlsym(tb, syms2[si]);
+            if (fn && !AlreadyHooked(fn)) {
+                _MSHookFunction(fn, (void *)hook_ASActive2, (void **)&orig_ASActive2);
+                MarkHooked(fn);
+                AppLog("C hook installed: %s", syms2[si]);
+            }
+        }
+        void *fn1 = dlsym(tb, "AudioSessionSetActive");
+        if (fn1 && !AlreadyHooked(fn1)) {
+            _MSHookFunction(fn1, (void *)hook_ASActive1, (void **)&orig_ASActive1);
+            MarkHooked(fn1);
+            AppLog("C hook installed: AudioSessionSetActive");
+        }
+    }
+}
+
+static void InstallRouteObserver(void) {
+    [[NSNotificationCenter defaultCenter] addObserverForName:AVAudioSessionRouteChangeNotification object:[AVAudioSession sharedInstance] queue:dispatch_get_main_queue() usingBlock:^(NSNotification *note) {
+        if (!g_inApply && RCSpeakerOn() && !RouteIsSpeaker()) { AppLog("route change, re-assert"); applySpeakerMode(); }
+    }];
 }
 
 static void TryInitAVHooks(void) {
@@ -203,4 +235,5 @@ static void TryInitAVHooks(void) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ TryInitAVHooks(); });
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(8.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ TryInitAVHooks(); });
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ TryInitAVHooks(); });
+    InstallRouteObserver();
 }

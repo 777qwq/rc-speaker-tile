@@ -158,6 +158,17 @@ static OSStatus hook_ASActive2(unsigned int sid, void *options) {
     return r;
 }
 
+static OSStatus (*orig_ptr1)(void *);
+static OSStatus hook_ptr1(void *ref) {
+    OSStatus r = orig_ptr1(ref);
+    if (!g_inApply && RCSpeakerOn()) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!g_inApply && RCSpeakerOn() && !RouteIsSpeaker()) applySpeakerMode();
+        });
+    }
+    return r;
+}
+
 static OSStatus (*orig_ASPSetProp)(unsigned int, unsigned int, const void *);
 static OSStatus hook_ASPSetProp(unsigned int propID, unsigned int size, const void *data) {
     OSStatus r = orig_ASPSetProp(propID, size, data);
@@ -250,7 +261,7 @@ static void TryInstallCHook(void) {
     // 全局符号兜底搜索
     void *gou = dlsym(RTLD_DEFAULT, "AudioOutputUnitStart");
     if (gou && !AlreadyHooked(gou)) {
-        _MSHookFunction(gou, (void *)hook_ASActive1, (void **)&orig_ASActive1);
+        _MSHookFunction(gou, (void *)hook_ptr1, (void **)&orig_ptr1);
         MarkHooked(gou);
         AppLog("C hook installed: AudioOutputUnitStart (global)");
     }

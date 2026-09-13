@@ -74,23 +74,30 @@ static void ToggleCallback(void) {
 #include <limits.h>
 #include <stdlib.h>
 
-static char *RCStatePath(void) {
-    static char cached[PATH_MAX] = {0};
-    if (cached[0] == 0) {
+static NSArray *RCStatePaths(void) {
+    static NSArray *paths = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSMutableArray *m = [NSMutableArray array];
         char resolved[PATH_MAX];
-        if (realpath("/var/jb", resolved)) snprintf(cached, sizeof(cached), "%s/.rc_speaker_on", resolved);
-        else snprintf(cached, sizeof(cached), "/var/jb/.rc_speaker_on");
-    }
-    return cached;
+        if (realpath("/var/jb", resolved))
+            [m addObject:[[NSString alloc] initWithFormat:@"%s/var/mobile/.rc_speaker_on", resolved]];
+        [m addObject:[[NSString alloc] initWithFormat:@"/var/mob%@/.rc_speaker_on", @"ile"]];
+        paths = [m copy];
+    });
+    return paths;
 }
 
 static BOOL RCSpeakerOn(void) {
-    FILE *f = fopen(RCStatePath(), "r");
-    if (!f) return NO;
-    char buf[8]; memset(buf, 0, sizeof(buf));
-    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
-    fclose(f);
-    return n > 0 && buf[0] == '1';
+    for (NSString *p in RCStatePaths()) {
+        FILE *f = fopen(p.UTF8String, "r");
+        if (!f) continue;
+        char buf[8]; memset(buf, 0, sizeof(buf));
+        size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+        fclose(f);
+        if (n > 0 && buf[0] == '1') return YES;
+    }
+    return NO;
 }
 
 static dispatch_source_t rcTimer = NULL;

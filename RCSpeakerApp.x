@@ -70,9 +70,36 @@ static void ToggleCallback(void) {
     });
 }
 
+
+static BOOL RCSpeakerOn(void) {
+    FILE *f = fopen("/var/mobile/.rc_speaker_on", "r");
+    if (!f) return NO;
+    char buf[8]; memset(buf, 0, sizeof(buf));
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    return n > 0 && buf[0] == '1';
+}
+
+static dispatch_source_t rcTimer = NULL;
+
+static void StartAutoApplyTimer(void) {
+    if (rcTimer) return;
+    dispatch_source_t t = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+    dispatch_source_set_timer(t, DISPATCH_TIME_NOW, 3ull * NSEC_PER_SEC, 1ull * NSEC_PER_SEC);
+    dispatch_source_set_event_handler(t, ^{
+        if (RCSpeakerOn() && !g_speakerOn) applySpeakerMode();
+    });
+    dispatch_resume(t);
+    rcTimer = t;
+}
+
 %ctor {
     NSString *myBid = [[NSBundle mainBundle] bundleIdentifier];
     if (!myBid || myBid.length == 0) return;
     CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)ToggleCallback, (__bridge CFStringRef)RCToggleName(), NULL, CFNotificationSuspensionBehaviorCoalesce);
     AppLog("hook loaded, bid=%s", myBid.UTF8String);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (RCSpeakerOn()) { AppLog("state=ON at launch"); applySpeakerMode(); }
+        StartAutoApplyTimer();
+    });
 }

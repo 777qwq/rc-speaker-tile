@@ -1,6 +1,6 @@
 Package: com.rc.speaker
 Name: 声音路由切换助手
-Version: 4.4.1
+Version: 4.4.2
 Architecture: iphoneos-arm64
 Description: 扬声器/耳机全局切换 + 控制中心磁贴 一体包（v4.5: 修复新启动App不跟随开关）
 Depends: mobilesubstrate, com.opa334.ccsupport

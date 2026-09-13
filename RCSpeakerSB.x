@@ -63,7 +63,10 @@ static void MRForceRoute(BOOL speaker) {
     }
     if (speaker) {
         if (pickUID) { SetPicked(pickUID, CFSTR("")); RCLog("MR: picked builtin speaker"); }
-        else RCLog("MR: builtin route not found");
+        else {
+            RCLog("MR: builtin not listed, trying hard pick by device name");
+            SetPicked((__bridge CFStringRef)devName, CFSTR(""));
+        }
     } else {
         if (altUID) { SetPicked(altUID, CFSTR("")); RCLog("MR: picked alt route"); }
         else RCLog("MR: no alt route, keep default");

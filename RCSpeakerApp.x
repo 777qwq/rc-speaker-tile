@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <limits.h>
 #include <stdlib.h>
+#include <dlfcn.h>
 
 static void AppLog(const char *fmt, ...) {
     FILE *f = fopen("/var/mobile/rc_debug.log", "a");
@@ -56,8 +57,13 @@ static BOOL RouteIsSpeaker(void) {
     return NO;
 }
 
+static BOOL g_inApply = NO;
+
+extern void MSHookFunction(void *symbol, void *hook, void **old);
+
 static void applySpeakerMode(void) {
     @try {
+        g_inApply = YES;
         AVAudioSession *s = [AVAudioSession sharedInstance];
         if (!savedCategory_global) savedCategory_global = [s.category copy];
         NSError *err = nil;
@@ -70,6 +76,7 @@ static void applySpeakerMode(void) {
         g_speakerOn = YES;
         AppLog("speaker ON");
     } @catch (NSException *e) { AppLog("apply exception"); }
+    @try { g_inApply = NO; } @catch (NSException *e) {}
 }
 
 static void restoreHeadphoneMode(void) {
@@ -84,6 +91,7 @@ static void restoreHeadphoneMode(void) {
         g_speakerOn = NO;
         AppLog("speaker OFF (restored)");
     } @catch (NSException *e) { AppLog("restore exception"); }
+    @try { g_inApply = NO; } @catch (NSException *e) {}
 }
 
 static void ToggleCallback(void) {
@@ -131,6 +139,43 @@ static void ToggleCallback(void) {
 
 static BOOL g_avInited = NO;
 
+static OSStatus (*orig_ASActive2)(unsigned int, void *options);
+static OSStatus hook_ASActive2(unsigned int sid, void *options) {
+    OSStatus r = orig_ASActive2(sid, options);
+    if (!g_inApply && RCSpeakerOn()) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!g_inApply && RCSpeakerOn() && !RouteIsSpeaker()) applySpeakerMode();
+        });
+    }
+    return r;
+}
+
+static OSStatus (*orig_ASActive1)(int);
+static OSStatus hook_ASActive1(int active) {
+    OSStatus r = orig_ASActive1(active);
+    if (active && !g_inApply && RCSpeakerOn()) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!g_inApply && RCSpeakerOn() && !RouteIsSpeaker()) applySpeakerMode();
+        });
+    }
+    return r;
+}
+
+static BOOL g_cHooked = NO;
+
+static void TryInstallCHook(void) {
+    if (g_cHooked) return;
+    void *tb = dlopen("/System/Library/Frameworks/AudioToolbox.framework/AudioToolbox", RTLD_NOW);
+    if (!tb) { AppLog("AudioToolbox dlopen failed"); return; }
+    void *ms = dlsym(RTLD_DEFAULT, "MSHookFunction");
+    if (!ms) { AppLog("MSHookFunction not available"); return; }
+    void (*_MSHookFunction)(void *, void *, void **) = (void (*)(void *, void *, void **))ms;
+    void *fn2 = dlsym(tb, "AudioSessionSetActiveWithOptions");
+    if (fn2) { _MSHookFunction(fn2, (void *)hook_ASActive2, (void **)&orig_ASActive2); g_cHooked = YES; AppLog("C hook: AudioSessionSetActiveWithOptions installed"); }
+    void *fn1 = dlsym(tb, "AudioSessionSetActive");
+    if (fn1) { _MSHookFunction(fn1, (void *)hook_ASActive1, (void **)&orig_ASActive1); AppLog("C hook: AudioSessionSetActive installed"); }
+}
+
 static void TryInitAVHooks(void) {
     if (g_avInited) return;
     if (objc_getClass("AVPlayer") && objc_getClass("AVAudioPlayer")) {
@@ -142,6 +187,7 @@ static void TryInitAVHooks(void) {
         %init(RendererHooks);
         AppLog("Renderer hooks registered");
     }
+    TryInstallCHook();
 }
 
 %ctor {
@@ -153,23 +199,6 @@ static void TryInitAVHooks(void) {
         if (RCSpeakerOn()) { AppLog("state=ON at launch"); if (!RouteIsSpeaker()) applySpeakerMode(); }
         else { AppLog("state=OFF at launch"); }
     });
-    // 智能纠错兜底：仅当开关为开、无他人在播、且实际路由不是扬声器时补挂
-    dispatch_source_t rcTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
-    dispatch_source_set_timer(rcTimer, DISPATCH_TIME_NOW, 2ull * NSEC_PER_SEC, 1ull * NSEC_PER_SEC);
-    dispatch_source_set_event_handler(rcTimer, ^{
-        if (!RCSpeakerOn()) return;
-        AVAudioSession *s = [AVAudioSession sharedInstance];
-        if (s.isOtherAudioPlaying) return;
-        if (!RouteIsSpeaker()) {
-            static time_t lastFix = 0;
-            time_t now = time(NULL);
-            int verbose = (now - lastFix > 60);
-            if (verbose) lastFix = now;
-            applySpeakerMode();
-            if (verbose) AppLog("route drifted, timer re-asserted");
-        }
-    });
-    dispatch_resume(rcTimer);
     // AV 框架可能加载较晚，多次尝试注册钩子
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ TryInitAVHooks(); });
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(8.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ TryInitAVHooks(); });

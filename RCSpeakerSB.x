@@ -80,7 +80,7 @@ static void RCLog(const char *msg) {
                 write(cfd, resp, strlen(resp));
                 close(cfd);
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    [(SpringBoard *)[UIApplication sharedApplication] rcDoToggle];
+                    [(id)[UIApplication sharedApplication] performSelector:@selector(rcDoToggle)];
                 });
             } else {
                 const char *resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";

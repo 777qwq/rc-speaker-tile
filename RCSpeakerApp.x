@@ -109,4 +109,20 @@ static BOOL RCSpeakerOn(void) {
         if (RCSpeakerOn()) { AppLog("state=ON at launch"); applySpeakerMode(); }
         else { AppLog("state=OFF at launch"); }
     });
+    // 按需纠错：仅当开关为开且实际路由不是扬声器时补挂
+    dispatch_source_t rcTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+    dispatch_source_set_timer(rcTimer, DISPATCH_TIME_NOW, 2ull * NSEC_PER_SEC, 1ull * NSEC_PER_SEC);
+    dispatch_source_set_event_handler(rcTimer, ^{
+        if (!RCSpeakerOn()) return;
+        AVAudioSession *s = [AVAudioSession sharedInstance];
+        BOOL speakerNow = NO;
+        for (AVAudioSessionPortDescription *out in s.currentRoute.outputs) {
+            if ([out.portType isEqualToString:AVAudioSessionPortBuiltInSpeaker]) { speakerNow = YES; break; }
+        }
+        if (!speakerNow) {
+            AppLog("route drifted, re-asserting speaker");
+            applySpeakerMode();
+        }
+    });
+    dispatch_resume(rcTimer);
 }

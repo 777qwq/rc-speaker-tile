@@ -9,6 +9,7 @@
 #include <dlfcn.h>
 
 static void AppLog(const char *fmt, ...) {
+    return; // logging disabled
     FILE *f = fopen("/var/mobile/rc_debug531.log", "a");
     if (!f) return;
     fseek(f, 0, SEEK_END);

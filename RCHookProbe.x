@@ -16,7 +16,12 @@ static void PLog(const char *msg) {
 %hook AVAudioSession
 - (BOOL)setActive:(BOOL)active withOptions:(AVAudioSessionSetActiveOptions)options error:(NSError **)outError {
     BOOL r = %orig;
-    PLog(active ? "setActive YES (hook works)" : "setActive NO");
+    PLog(active ? "setActive(withOptions) YES (hook works)" : "setActive(withOptions) NO");
+    return r;
+}
+- (BOOL)setActive:(BOOL)active error:(NSError **)outError {
+    BOOL r = %orig;
+    PLog(active ? "setActive(error) YES (hook works)" : "setActive(error) NO");
     return r;
 }
 %end

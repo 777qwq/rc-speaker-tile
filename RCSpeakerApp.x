@@ -101,6 +101,14 @@ static void ToggleCallback(void) {
     %orig;
     if (RCSpeakerOn() && !RouteIsSpeaker()) { AppLog("AVPlayer play, re-assert"); applySpeakerMode(); }
 }
+- (void)playImmediatelyAtRate:(float)rate {
+    %orig;
+    if (RCSpeakerOn() && !RouteIsSpeaker()) { AppLog("AVPlayer playImmediately, re-assert"); applySpeakerMode(); }
+}
+- (void)setRate:(float)rate {
+    %orig;
+    if (rate > 0.0 && RCSpeakerOn() && !RouteIsSpeaker()) { AppLog("AVPlayer setRate, re-assert"); applySpeakerMode(); }
+}
 %end
 
 %hook AVAudioPlayer
@@ -108,6 +116,15 @@ static void ToggleCallback(void) {
     BOOL r = %orig;
     if (RCSpeakerOn() && !RouteIsSpeaker()) { AppLog("AVAudioPlayer play, re-assert"); applySpeakerMode(); }
     return r;
+}
+%end
+%end
+
+%group RendererHooks
+%hook AVSampleBufferAudioRenderer
+- (void)play {
+    %orig;
+    if (RCSpeakerOn() && !RouteIsSpeaker()) { AppLog("Renderer play, re-assert"); applySpeakerMode(); }
 }
 %end
 %end
@@ -120,6 +137,10 @@ static void TryInitAVHooks(void) {
         %init(AVHooks);
         g_avInited = YES;
         AppLog("AV hooks registered");
+    }
+    if (objc_getClass("AVSampleBufferAudioRenderer")) {
+        %init(RendererHooks);
+        AppLog("Renderer hooks registered");
     }
 }
 

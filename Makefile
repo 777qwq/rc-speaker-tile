@@ -22,6 +22,6 @@ include $(THEOS_MAKE_PATH)/tweak.mk
 include $(THEOS_MAKE_PATH)/bundle.mk
 
 after-stage::
-	mkdir -p $(THEOS_STAGING)/Library/MobileSubstrate/DynamicLibraries
-	cp RCSpeakerApp.filter.txt $(THEOS_STAGING)/Library/MobileSubstrate/DynamicLibraries/RCSpeakerApp.plist
-	cp RCSpeakerSB.filter.txt $(THEOS_STAGING)/Library/MobileSubstrate/DynamicLibraries/RCSpeakerSB.plist
+	mkdir -p $(THEOS_OBJ_DIR)/staging/Library/MobileSubstrate/DynamicLibraries
+	cp RCSpeakerApp.filter.txt $(THEOS_OBJ_DIR)/staging/Library/MobileSubstrate/DynamicLibraries/RCSpeakerApp.plist
+	cp RCSpeakerSB.filter.txt $(THEOS_OBJ_DIR)/staging/Library/MobileSubstrate/DynamicLibraries/RCSpeakerSB.plist

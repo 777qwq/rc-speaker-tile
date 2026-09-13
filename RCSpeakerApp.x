@@ -200,7 +200,11 @@ static BOOL AlreadyHooked(void *p) {
 }
 static void MarkHooked(void *p) { if (g_hookedCount < 8) g_hookedPtrs[g_hookedCount++] = p; }
 
+static BOOL g_cTried = NO;
+
 static void TryInstallCHook(void) {
+    if (g_cTried) return;
+    g_cTried = YES;
     void *ms = dlsym(RTLD_DEFAULT, "MSHookFunction");
     if (!ms) return;
     void (*_MSHookFunction)(void *, void *, void **) = (void (*)(void *, void *, void **))ms;
@@ -284,7 +288,7 @@ static void TryInitAVHooks(void) {
         %init(RendererHooks);
         AppLog("Renderer hooks registered");
     }
-    TryInstallCHook();
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{ TryInstallCHook(); });
 }
 
 %ctor {

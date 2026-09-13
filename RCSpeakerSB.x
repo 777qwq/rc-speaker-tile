@@ -63,7 +63,8 @@ static void RCLog(const char *msg) {
             close(cfd);
             if (strstr(buf, "GET /toggle")) {
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    [(SpringBoard *)[UIApplication sharedApplication] rcDoToggle];
+                    UIApplication *app = [UIApplication sharedApplication];
+                    [app performSelector:@selector(rcDoToggle)];
                 });
             }
         }

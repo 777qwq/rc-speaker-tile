@@ -1,6 +1,6 @@
 Package: com.rc.speaker
 Name: 声音路由切换助手
-Version: 5.3.0
+Version: 5.3.1
 Architecture: iphoneos-arm64
 Description: 扬声器/耳机全局切换 + 控制中心磁贴 一体包（v4.4.9: 播放钩子替代定时器）
 Depends: mobilesubstrate

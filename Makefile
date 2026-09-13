@@ -6,24 +6,9 @@ INSTALL_TARGET_PROCESSES = SpringBoard
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = RCSpeakerSB RCSpeakerApp
-RCSpeakerSB_FILES = RCSpeakerSB.x
-RCSpeakerSB_FRAMEWORKS = UIKit Foundation
-RCSpeakerSB_LDFLAGS = -undefined dynamic_lookup
-RCSpeakerApp_FILES = RCSpeakerApp.x
-RCSpeakerApp_FRAMEWORKS = AVFAudio
-RCSpeakerApp_LDFLAGS = -undefined dynamic_lookup
-
-BUNDLE_NAME = RCSpeakerToggle
-RCSpeakerToggle_FILES = RCSpeakerToggle.x
-RCSpeakerToggle_FRAMEWORKS = UIKit CoreGraphics
-RCSpeakerToggle_INSTALL_PATH = /Library/ControlCenter/Bundles
-RCSpeakerToggle_LDFLAGS = -undefined dynamic_lookup
+TWEAK_NAME = RCHookProbe
+RCHookProbe_FILES = RCHookProbe.x
+RCHookProbe_FRAMEWORKS = AVFAudio
+RCHookProbe_LDFLAGS = -undefined dynamic_lookup
 
 include $(THEOS_MAKE_PATH)/tweak.mk
-include $(THEOS_MAKE_PATH)/bundle.mk
-
-after-stage::
-	mkdir -p $(THEOS_OBJ_DIR)/staging/Library/MobileSubstrate/DynamicLibraries
-	cp RCSpeakerApp.filter.txt $(THEOS_OBJ_DIR)/staging/Library/MobileSubstrate/DynamicLibraries/RCSpeakerApp.plist
-	cp RCSpeakerSB.filter.txt $(THEOS_OBJ_DIR)/staging/Library/MobileSubstrate/DynamicLibraries/RCSpeakerSB.plist

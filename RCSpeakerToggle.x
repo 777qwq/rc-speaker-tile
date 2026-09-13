@@ -14,31 +14,33 @@
 
 static NSString *NotifyName = @"com.rc.apphelper.toggle";
 
-static NSString *RCStatePath(void) {
-    static NSString *p = nil;
+static NSArray *RCStatePaths(void) {
+    static NSArray *paths = nil;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
+        NSMutableArray *m = [NSMutableArray array];
         char resolved[PATH_MAX];
         if (realpath("/var/jb", resolved))
-            p = [[NSString alloc] initWithFormat:@"%s/.rc_speaker_on", resolved];
-        else
-            p = [@"/var/jb/.rc_speaker_on" copy];
+            [m addObject:[[NSString alloc] initWithFormat:@"%s/var/mobile/.rc_speaker_on", resolved]];
+        [m addObject:[[NSString alloc] initWithFormat:@"/var/mob%@/.rc_speaker_on", @"ile"]];
+        paths = [m copy];
     });
-    return p;
+    return paths;
 }
 
 static BOOL SpeakerOn(void) {
-    NSString *s = [NSString stringWithContentsOfFile:RCStatePath()
-                                            encoding:NSUTF8StringEncoding
-                                               error:nil];
-    return [s isEqualToString:@"1"];
+    for (NSString *p in RCStatePaths()) {
+        NSString *s = [NSString stringWithContentsOfFile:p encoding:NSUTF8StringEncoding error:nil];
+        if ([s isEqualToString:@"1"]) return YES;
+    }
+    return NO;
 }
 
 static void SetSpeakerOn(BOOL on) {
-    [on ? @"1" : @"0" writeToFile:RCStatePath()
-                        atomically:YES
-                          encoding:NSUTF8StringEncoding
-                             error:nil];
+    for (NSString *p in RCStatePaths()) {
+        [on ? @"1" : @"0" writeToFile:p atomically:YES
+                              encoding:NSUTF8StringEncoding error:nil];
+    }
     notify_post(NotifyName.UTF8String);
 }
 

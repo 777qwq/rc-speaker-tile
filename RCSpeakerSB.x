@@ -25,7 +25,7 @@ static void RCLog(const char *msg) {
     if (fd < 0) return;
     char buf[512];
     time_t t = time(NULL);
-    struct tm tmv; localtime_r(&t, &tmv); structme_r(&t, &tmv);
+    struct tm tmv; localtime_r(&t, &tmv);
     int n = snprintf(buf, sizeof(buf), "[SB %02d:%02d:%02d] %s\n", tmv.tm_hour, tmv.tm_min, tmv.tm_sec, msg);
     write(fd, buf, n);
     close(fd);

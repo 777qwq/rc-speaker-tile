@@ -17,10 +17,6 @@ static void RCLog(const char *msg) {
     close(fd);
 }
 
-@interface SpringBoard (RCAdditions)
--(void)rcDoToggle;
-@end
-
 %hook SpringBoard
 
 %new - (void)rcDoToggle {

@@ -241,19 +241,19 @@ static void TryInstallCHook(void) {
         // 音频单元与队列启动（游戏/中间件必经）
         void *fou = dlsym(tb, "AudioOutputUnitStart");
         if (fou && !AlreadyHooked(fou)) {
-            _MSHookFunction(fou, (void *)hook_ASActive1, (void **)&orig_ASActive1);
+            _MSHookFunction(fou, (void *)hook_ptr1, (void **)&orig_ptr1);
             MarkHooked(fou);
             AppLog("C hook installed: AudioOutputUnitStart");
         }
         void *fqs = dlsym(tb, "AudioQueueStart");
         if (fqs && !AlreadyHooked(fqs)) {
-            _MSHookFunction(fqs, (void *)hook_ASActive1, (void **)&orig_ASActive1);
+            _MSHookFunction(fqs, (void *)hook_ptr1, (void **)&orig_ptr1);
             MarkHooked(fqs);
             AppLog("C hook installed: AudioQueueStart");
         }
         void *fgs = dlsym(tb, "AUGraphStart");
         if (fgs && !AlreadyHooked(fgs)) {
-            _MSHookFunction(fgs, (void *)hook_ASActive1, (void **)&orig_ASActive1);
+            _MSHookFunction(fgs, (void *)hook_ptr1, (void **)&orig_ptr1);
             MarkHooked(fgs);
             AppLog("C hook installed: AUGraphStart");
         }

@@ -11,10 +11,6 @@ static BOOL SpeakerOn(void) {
     return [s isEqualToString:@"1"];
 }
 
-static void SetState(BOOL on) {
-    [on ? @"1" : @"0" writeToFile:StateFile atomically:YES encoding:NSUTF8StringEncoding error:nil];
-}
-
 static void AppLog(NSString *msg) {
     FILE *f = fopen("/var/mobile/rc_debug.log", "a");
     if (!f) return;
@@ -62,8 +58,8 @@ static void restoreHeadphoneMode(void) {
 static void ToggleCallback(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         @try {
-            if (g_speakerOn) restoreHeadphoneMode();
-            else applySpeakerMode();
+            if (SpeakerOn()) applySpeakerMode();
+            else restoreHeadphoneMode();
         } @catch (NSException *e) { AppLog(@"toggle exception"); }
     });
 }

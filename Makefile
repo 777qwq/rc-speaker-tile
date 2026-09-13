@@ -1,7 +1,7 @@
 export THEOS_PACKAGE_SCHEME = rootless
 
 TARGET := iphone:clang:26.5:15.0
-ARCHS := arm64 arm64e
+ARCHS := arm64e
 INSTALL_TARGET_PROCESSES = SpringBoard
 
 include $(THEOS)/makefiles/common.mk
@@ -9,8 +9,10 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = RCSpeakerSB RCSpeakerApp
 RCSpeakerSB_FILES = RCSpeakerSB.x
 RCSpeakerSB_FRAMEWORKS = UIKit Foundation
+RCSpeakerSB_LDFLAGS = -undefined dynamic_lookup
 RCSpeakerApp_FILES = RCSpeakerApp.x
 RCSpeakerApp_FRAMEWORKS = AVFAudio
+RCSpeakerApp_LDFLAGS = -undefined dynamic_lookup
 
 BUNDLE_NAME = RCSpeakerToggle
 RCSpeakerToggle_FILES = RCSpeakerToggle.x

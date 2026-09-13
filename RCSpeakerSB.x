@@ -76,6 +76,7 @@ static void RCLog(const char *msg) {
             if (cfd < 0) continue;
             memset(buf, 0, sizeof(buf));
             read(cfd, buf, sizeof(buf) - 1);
+            RCLog(buf);
             if (strstr(buf, "GET /toggle")) {
                 const char *resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
                 write(cfd, resp, strlen(resp));

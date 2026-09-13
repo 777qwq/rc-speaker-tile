@@ -104,6 +104,14 @@ static void ToggleCallback(void) {
 }
 
 %group AVHooks
+%hook AVAudioEngine
+- (BOOL)startAndReturnError:(NSError **)outError {
+    BOOL r = %orig;
+    if (r && RCSpeakerOn() && !RouteIsSpeaker()) { AppLog("AVAudioEngine start, re-assert"); applySpeakerMode(); }
+    return r;
+}
+%end
+
 %hook AVPlayer
 - (void)play {
     %orig;
@@ -198,6 +206,24 @@ static void TryInstallCHook(void) {
             _MSHookFunction(fn1, (void *)hook_ASActive1, (void **)&orig_ASActive1);
             MarkHooked(fn1);
             AppLog("C hook installed: AudioSessionSetActive");
+        }
+        void *au = dlopen("/System/Library/Frameworks/AudioUnit.framework/AudioUnit", RTLD_NOW);
+        if (au) {
+            void *fou = dlsym(au, "AudioOutputUnitStart");
+            if (fou && !AlreadyHooked(fou)) {
+                _MSHookFunction(fou, (void *)hook_ASActive1, (void **)&orig_ASActive1);
+                MarkHooked(fou);
+                AppLog("C hook installed: AudioOutputUnitStart");
+            }
+        }
+        void *aq = dlopen("/System/Library/Frameworks/AudioToolbox.framework/AudioToolbox", RTLD_NOW);
+        if (aq) {
+            void *fqs = dlsym(aq, "AudioQueueStart");
+            if (fqs && !AlreadyHooked(fqs)) {
+                _MSHookFunction(fqs, (void *)hook_ASActive1, (void **)&orig_ASActive1);
+                MarkHooked(fqs);
+                AppLog("C hook installed: AudioQueueStart");
+            }
         }
     }
 }

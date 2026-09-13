@@ -21,8 +21,12 @@ static void RCLog(const char *msg) {
 
 %new - (void)rcDoToggle {
     @try {
+        NSString *path = @"/var/mobile/.rc_speaker_on";
+        NSString *s = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
+        BOOL on = ![s isEqualToString:@"1"];
+        [on ? @"1" : @"0" writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
         CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR("com.rc.apphelper.toggle"), NULL, NULL, YES);
-        RCLog("toggle: posted");
+        RCLog(on ? "toggle: posted (ON)" : "toggle: posted (OFF)");
     } @catch (NSException *e) { RCLog("toggle exception"); }
 }
 

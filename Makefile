@@ -15,6 +15,7 @@ RCSpeakerApp_FRAMEWORKS = AVFAudio
 BUNDLE_NAME = RCSpeakerToggle
 RCSpeakerToggle_FILES = RCSpeakerToggle.x
 RCSpeakerToggle_FRAMEWORKS = UIKit CoreGraphics
+RCSpeakerToggle_INSTALL_PATH = /Library/ControlCenter/Bundles
 RCSpeakerToggle_LDFLAGS = -undefined dynamic_lookup
 
 include $(THEOS_MAKE_PATH)/tweak.mk

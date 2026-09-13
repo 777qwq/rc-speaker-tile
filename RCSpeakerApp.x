@@ -71,8 +71,21 @@ static void ToggleCallback(void) {
 }
 
 
+#include <limits.h>
+#include <stdlib.h>
+
+static char *RCStatePath(void) {
+    static char cached[PATH_MAX] = {0};
+    if (cached[0] == 0) {
+        char resolved[PATH_MAX];
+        if (realpath("/var/jb", resolved)) snprintf(cached, sizeof(cached), "%s/.rc_speaker_on", resolved);
+        else snprintf(cached, sizeof(cached), "/var/jb/.rc_speaker_on");
+    }
+    return cached;
+}
+
 static BOOL RCSpeakerOn(void) {
-    FILE *f = fopen("/var/mobile/.rc_speaker_on", "r");
+    FILE *f = fopen(RCStatePath(), "r");
     if (!f) return NO;
     char buf[8]; memset(buf, 0, sizeof(buf));
     size_t n = fread(buf, 1, sizeof(buf) - 1, f);

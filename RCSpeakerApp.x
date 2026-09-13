@@ -95,6 +95,7 @@ static void ToggleCallback(void) {
     });
 }
 
+%group AVHooks
 %hook AVPlayer
 - (void)play {
     %orig;
@@ -109,6 +110,18 @@ static void ToggleCallback(void) {
     return r;
 }
 %end
+%end
+
+static BOOL g_avInited = NO;
+
+static void TryInitAVHooks(void) {
+    if (g_avInited) return;
+    if (objc_getClass("AVPlayer") && objc_getClass("AVAudioPlayer")) {
+        %init(AVHooks);
+        g_avInited = YES;
+        AppLog("AV hooks registered");
+    }
+}
 
 %ctor {
     %init;
@@ -119,4 +132,8 @@ static void ToggleCallback(void) {
         if (RCSpeakerOn()) { AppLog("state=ON at launch"); if (!RouteIsSpeaker()) applySpeakerMode(); }
         else { AppLog("state=OFF at launch"); }
     });
+    // AV 框架可能加载较晚，多次尝试注册钩子
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ TryInitAVHooks(); });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(8.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ TryInitAVHooks(); });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ TryInitAVHooks(); });
 }

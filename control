@@ -1,6 +1,6 @@
 Package: com.rc.speaker.probe
 Name: RC Hook Probe
-Version: 1.1
+Version: 1.2
 Architecture: iphoneos-arm64
 Description: 临时诊断包：测试云构建dylib的logos钩子能否在本机加载。测完卸载。
 Depends: mobilesubstrate

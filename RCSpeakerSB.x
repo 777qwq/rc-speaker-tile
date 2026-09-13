@@ -24,6 +24,7 @@ static NSString *RCToggleName(void) {
 static void RCLog(const char *msg) {
     int fd = open("/var/mobile/rc_debug.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
     if (fd < 0) return;
+    if (lseek(fd, 0, SEEK_END) > 200 * 1024) { close(fd); fd = open("/var/mobile/rc_debug.log", O_WRONLY | O_CREAT | O_TRUNC, 0644); if (fd < 0) return; }
     char buf[512];
     time_t t = time(NULL);
     struct tm tmv; localtime_r(&t, &tmv);

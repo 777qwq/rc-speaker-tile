@@ -203,7 +203,7 @@ static void TryInstallCHook(void) {
 }
 
 static void InstallRouteObserver(void) {
-    [[NSNotificationCenter defaultCenter] addObserverForName:AVAudioSessionRouteChangeNotification object:[AVAudioSession sharedInstance] queue:dispatch_get_main_queue() usingBlock:^(NSNotification *note) {
+    [[NSNotificationCenter defaultCenter] addObserverForName:AVAudioSessionRouteChangeNotification object:[AVAudioSession sharedInstance] queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
         if (!g_inApply && RCSpeakerOn() && !RouteIsSpeaker()) { AppLog("route change, re-assert"); applySpeakerMode(); }
     }];
 }

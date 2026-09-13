@@ -6,12 +6,16 @@ INSTALL_TARGET_PROCESSES = SpringBoard
 
 include $(THEOS)/makefiles/common.mk
 
-BUNDLE_NAME = RCSpeakerToggle
+TWEAK_NAME = RCSpeakerSB RCSpeakerApp
+RCSpeakerSB_FILES = RCSpeakerSB.x
+RCSpeakerSB_FRAMEWORKS = UIKit Foundation
+RCSpeakerApp_FILES = RCSpeakerApp.x
+RCSpeakerApp_FRAMEWORKS = AVFAudio
 
+BUNDLE_NAME = RCSpeakerToggle
 RCSpeakerToggle_FILES = RCSpeakerToggle.x
 RCSpeakerToggle_FRAMEWORKS = UIKit CoreGraphics
 RCSpeakerToggle_LDFLAGS = -undefined dynamic_lookup
-RCSpeakerToggle_INSTALL_PATH = /Library/ControlCenter/Bundles
-RCSpeakerToggle_CFLAGS = -fobjc-arc
 
+include $(THEOS_MAKE_PATH)/tweak.mk
 include $(THEOS_MAKE_PATH)/bundle.mk

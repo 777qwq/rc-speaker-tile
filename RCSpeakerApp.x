@@ -1,26 +1,30 @@
 #import <Foundation/Foundation.h>
-#import <AVFAudio/AVFAudio.h>
-#import <UIKit/UIKit.h>
 #include <stdarg.h>
 #include <stdio.h>
+#import <AVFAudio/AVFAudio.h>
+#import <UIKit/UIKit.h>
 
-static NSString *StateFile = @"/var/mobile/.rc_speaker_on";
-
-static BOOL SpeakerOn(void) {
-    NSString *s = [NSString stringWithContentsOfFile:StateFile encoding:NSUTF8StringEncoding error:nil];
-    return [s isEqualToString:@"1"];
+static NSString * _Nullable RC(const char *c) {
+    @try { return [[NSString alloc] initWithUTF8String:c]; }
+    @catch (NSException *e) { return nil; }
 }
-
-static void AppLog(NSString *msg) {
-    FILE *f = fopen("/var/mobile/rc_debug.log", "a");
-    if (!f) return;
-    time_t t = time(NULL); struct tm tmv; localtime_r(&t, &tmv);
-    fprintf(f, "[APP %02d:%02d:%02d] %s\n", tmv.tm_hour, tmv.tm_min, tmv.tm_sec, msg.UTF8String);
-    fclose(f);
+static NSString *RCToggleName(void) {
+    static NSString *n = nil; static dispatch_once_t once;
+    dispatch_once(&once, ^{ n = RC("com.rc.apphelper.toggle"); }); return n;
 }
 
 static NSString *savedCategory_global = nil;
 static BOOL g_speakerOn = NO;
+
+static void AppLog(const char *fmt, ...) {
+    FILE *f = fopen("/var/mobile/rc_debug.log", "a");
+    if (!f) return;
+    char buf[512]; va_list ap; va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap); va_end(ap);
+    time_t t = time(NULL); struct tm tmv; localtime_r(&t, &tmv);
+    fprintf(f, "[APP %02d:%02d:%02d] %s\n", tmv.tm_hour, tmv.tm_min, tmv.tm_sec, buf);
+    fclose(f);
+}
 
 static void applySpeakerMode(void) {
     @try {
@@ -37,8 +41,8 @@ static void applySpeakerMode(void) {
             }
         }
         g_speakerOn = YES;
-        AppLog(@"speaker ON (auto)");
-    } @catch (NSException *e) { AppLog(@"apply exception"); }
+        AppLog("speaker ON");
+    } @catch (NSException *e) { AppLog("apply exception"); }
 }
 
 static void restoreHeadphoneMode(void) {
@@ -51,39 +55,24 @@ static void restoreHeadphoneMode(void) {
             savedCategory_global = nil;
         }
         g_speakerOn = NO;
-        AppLog(@"speaker OFF (restored)");
-    } @catch (NSException *e) { AppLog(@"restore exception"); }
+        AppLog("speaker OFF (restored)");
+    } @catch (NSException *e) { AppLog("restore exception"); }
 }
 
 static void ToggleCallback(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         @try {
-            if (SpeakerOn()) applySpeakerMode();
-            else restoreHeadphoneMode();
-        } @catch (NSException *e) { AppLog(@"toggle exception"); }
+            NSString *bid = [[NSBundle mainBundle] bundleIdentifier];
+            AppLog("callback fired, bid=%s", bid ? [bid UTF8String] : "(null)");
+            if (g_speakerOn) restoreHeadphoneMode();
+            else applySpeakerMode();
+        } @catch (NSException *e) { AppLog("toggle exception"); }
     });
 }
 
-%hook AVAudioSession
-- (BOOL)setActive:(BOOL)active withOptions:(AVAudioSessionSetActiveOptions)options error:(NSError **)outError {
-    BOOL r = %orig;
-    if (r && active && SpeakerOn()) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (SpeakerOn() && !g_speakerOn) applySpeakerMode();
-            else if (SpeakerOn() && g_speakerOn) applySpeakerMode();
-        });
-    }
-    return r;
-}
-%end
-
 %ctor {
-    %init;
-    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)ToggleCallback, CFSTR("com.rc.apphelper.toggle"), NULL, CFNotificationSuspensionBehaviorCoalesce);
-    // 冷启动自动接管：若开关为开，延迟应用
-    if (SpeakerOn()) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            if (SpeakerOn()) applySpeakerMode();
-        });
-    }
+    NSString *myBid = [[NSBundle mainBundle] bundleIdentifier];
+    if (!myBid || myBid.length == 0) return;
+    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)ToggleCallback, (__bridge CFStringRef)RCToggleName(), NULL, CFNotificationSuspensionBehaviorCoalesce);
+    AppLog("hook loaded, bid=%s", myBid.UTF8String);
 }

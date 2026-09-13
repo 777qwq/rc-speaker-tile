@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+@class SpringBoard;
 #import <UIKit/UIKit.h>
 
 

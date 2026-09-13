@@ -9,6 +9,7 @@
 #include <dlfcn.h>
 
 static void AppLog(const char *fmt, ...) {
+    return; // logging disabled in final
     FILE *f = fopen("/var/mobile/rc_debug.log", "a");
     if (!f) return;
     fseek(f, 0, SEEK_END);
@@ -158,17 +159,6 @@ static OSStatus hook_ASActive2(unsigned int sid, void *options) {
     return r;
 }
 
-static OSStatus (*orig_ASPSetProp)(unsigned int, unsigned int, const void *);
-static OSStatus hook_ASPSetProp(unsigned int propID, unsigned int size, const void *data) {
-    OSStatus r = orig_ASPSetProp(propID, size, data);
-    if (!g_inApply && RCSpeakerOn()) {
-        unsigned int route = 0x73706B72; /* 'spkr' */
-        unsigned int prop = 0x6F767264;  /* 'ovrd' = kAudioSessionProperty_OverrideAudioRoute */
-        orig_ASPSetProp(prop, sizeof(route), &route);
-    }
-    return r;
-}
-
 static OSStatus (*orig_ASActive1)(int);
 static OSStatus hook_ASActive1(int active) {
     OSStatus r = orig_ASActive1(active);
@@ -217,12 +207,6 @@ static void TryInstallCHook(void) {
             _MSHookFunction(fn1, (void *)hook_ASActive1, (void **)&orig_ASActive1);
             MarkHooked(fn1);
             AppLog("C hook installed: AudioSessionSetActive");
-        }
-        void *fpp = dlsym(tb, "AudioSessionSetProperty");
-        if (fpp && !AlreadyHooked(fpp)) {
-            _MSHookFunction(fpp, (void *)hook_ASPSetProp, (void **)&orig_ASPSetProp);
-            MarkHooked(fpp);
-            AppLog("C hook installed: AudioSessionSetProperty");
         }
         void *au = dlopen("/System/Library/Frameworks/AudioUnit.framework/AudioUnit", RTLD_NOW);
         if (au) {

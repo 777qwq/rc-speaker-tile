@@ -117,13 +117,18 @@ static BOOL RCSpeakerOn(void) {
     dispatch_source_set_event_handler(rcTimer, ^{
         if (!RCSpeakerOn()) return;
         AVAudioSession *s = [AVAudioSession sharedInstance];
+        if (s.isOtherAudioPlaying) return; // 别的 App 正在发声，由它负责
         BOOL speakerNow = NO;
         for (AVAudioSessionPortDescription *out in s.currentRoute.outputs) {
             if ([out.portType isEqualToString:AVAudioSessionPortBuiltInSpeaker]) { speakerNow = YES; break; }
         }
         if (!speakerNow) {
-            AppLog("route drifted, re-asserting speaker");
+            static time_t lastAssert = 0;
+            time_t now = time(NULL);
+            int verbose = (now - lastAssert > 60);
+            if (verbose) lastAssert = now;
             applySpeakerMode();
+            if (verbose) AppLog("route drifted, re-asserted");
         }
     });
     dispatch_resume(rcTimer);

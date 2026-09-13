@@ -19,6 +19,8 @@ static BOOL g_speakerOn = NO;
 static void AppLog(const char *fmt, ...) {
     FILE *f = fopen("/var/mobile/rc_debug.log", "a");
     if (!f) return;
+    fseek(f, 0, SEEK_END);
+    if (ftell(f) > 200 * 1024) { fclose(f); f = fopen("/var/mobile/rc_debug.log", "w"); if (!f) return; }
     char buf[512]; va_list ap; va_start(ap, fmt);
     vsnprintf(buf, sizeof(buf), fmt, ap); va_end(ap);
     time_t t = time(NULL); struct tm tmv; localtime_r(&t, &tmv);

@@ -158,6 +158,17 @@ static OSStatus hook_ASActive2(unsigned int sid, void *options) {
     return r;
 }
 
+static OSStatus (*orig_ASPSetProp)(unsigned int, unsigned int, const void *);
+static OSStatus hook_ASPSetProp(unsigned int propID, unsigned int size, const void *data) {
+    OSStatus r = orig_ASPSetProp(propID, size, data);
+    if (!g_inApply && RCSpeakerOn()) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!g_inApply && RCSpeakerOn() && !RouteIsSpeaker()) applySpeakerMode();
+        });
+    }
+    return r;
+}
+
 static OSStatus (*orig_ASActive1)(int);
 static OSStatus hook_ASActive1(int active) {
     OSStatus r = orig_ASActive1(active);
@@ -187,6 +198,8 @@ static void TryInstallCHook(void) {
         "/System/Library/Frameworks/AudioToolbox.framework/AudioToolbox",
         "/System/Library/PrivateFrameworks/AudioSession.framework/AudioSession",
         "/System/Library/Frameworks/MediaToolbox.framework/MediaToolbox",
+        "/System/Library/Frameworks/AudioUnit.framework/AudioUnit",
+        "/System/Library/PrivateFrameworks/mediacore/CoreMedia.framework/CoreMedia",
         NULL
     };
     const char *syms2[] = { "AudioSessionSetActiveWithOptions", "AudioSessionSetActiveWithProperties", NULL };
@@ -207,24 +220,39 @@ static void TryInstallCHook(void) {
             MarkHooked(fn1);
             AppLog("C hook installed: AudioSessionSetActive");
         }
-        void *au = dlopen("/System/Library/Frameworks/AudioUnit.framework/AudioUnit", RTLD_NOW);
-        if (au) {
-            void *fou = dlsym(au, "AudioOutputUnitStart");
-            if (fou && !AlreadyHooked(fou)) {
-                _MSHookFunction(fou, (void *)hook_ASActive1, (void **)&orig_ASActive1);
-                MarkHooked(fou);
-                AppLog("C hook installed: AudioOutputUnitStart");
-            }
+        // 游戏路由/类别设置的必经 API
+        void *fp = dlsym(tb, "AudioSessionSetProperty");
+        if (fp && !AlreadyHooked(fp)) {
+            _MSHookFunction(fp, (void *)hook_ASPSetProp, (void **)&orig_ASPSetProp);
+            MarkHooked(fp);
+            AppLog("C hook installed: AudioSessionSetProperty");
         }
-        void *aq = dlopen("/System/Library/Frameworks/AudioToolbox.framework/AudioToolbox", RTLD_NOW);
-        if (aq) {
-            void *fqs = dlsym(aq, "AudioQueueStart");
-            if (fqs && !AlreadyHooked(fqs)) {
-                _MSHookFunction(fqs, (void *)hook_ASActive1, (void **)&orig_ASActive1);
-                MarkHooked(fqs);
-                AppLog("C hook installed: AudioQueueStart");
-            }
+        // 音频单元与队列启动（游戏/中间件必经）
+        void *fou = dlsym(tb, "AudioOutputUnitStart");
+        if (fou && !AlreadyHooked(fou)) {
+            _MSHookFunction(fou, (void *)hook_ASActive1, (void **)&orig_ASActive1);
+            MarkHooked(fou);
+            AppLog("C hook installed: AudioOutputUnitStart");
         }
+        void *fqs = dlsym(tb, "AudioQueueStart");
+        if (fqs && !AlreadyHooked(fqs)) {
+            _MSHookFunction(fqs, (void *)hook_ASActive1, (void **)&orig_ASActive1);
+            MarkHooked(fqs);
+            AppLog("C hook installed: AudioQueueStart");
+        }
+        void *fgs = dlsym(tb, "AUGraphStart");
+        if (fgs && !AlreadyHooked(fgs)) {
+            _MSHookFunction(fgs, (void *)hook_ASActive1, (void **)&orig_ASActive1);
+            MarkHooked(fgs);
+            AppLog("C hook installed: AUGraphStart");
+        }
+    }
+    // 全局符号兜底搜索
+    void *gou = dlsym(RTLD_DEFAULT, "AudioOutputUnitStart");
+    if (gou && !AlreadyHooked(gou)) {
+        _MSHookFunction(gou, (void *)hook_ASActive1, (void **)&orig_ASActive1);
+        MarkHooked(gou);
+        AppLog("C hook installed: AudioOutputUnitStart (global)");
     }
 }
 

@@ -132,6 +132,23 @@ static void TryInitAVHooks(void) {
         if (RCSpeakerOn()) { AppLog("state=ON at launch"); if (!RouteIsSpeaker()) applySpeakerMode(); }
         else { AppLog("state=OFF at launch"); }
     });
+    // 智能纠错兜底：仅当开关为开、无他人在播、且实际路由不是扬声器时补挂
+    dispatch_source_t rcTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+    dispatch_source_set_timer(rcTimer, DISPATCH_TIME_NOW, 2ull * NSEC_PER_SEC, 1ull * NSEC_PER_SEC);
+    dispatch_source_set_event_handler(rcTimer, ^{
+        if (!RCSpeakerOn()) return;
+        AVAudioSession *s = [AVAudioSession sharedInstance];
+        if (s.isOtherAudioPlaying) return;
+        if (!RouteIsSpeaker()) {
+            static time_t lastFix = 0;
+            time_t now = time(NULL);
+            int verbose = (now - lastFix > 60);
+            if (verbose) lastFix = now;
+            applySpeakerMode();
+            if (verbose) AppLog("route drifted, timer re-asserted");
+        }
+    });
+    dispatch_resume(rcTimer);
     // AV 框架可能加载较晚，多次尝试注册钩子
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ TryInitAVHooks(); });
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(8.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ TryInitAVHooks(); });

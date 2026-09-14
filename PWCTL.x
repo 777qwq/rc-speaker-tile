@@ -125,15 +125,15 @@ static NSString * const CHR_UUID = @"49535343-8841-43F4-A8D4-ECBE34729BB3";
     if (!self.wchr) {
         CLog(@"not connected, connecting first");
         self.onReady = ^(BOOL ok) {
-            if (ok) { [[PWCentral shared] writeFrame:frame]; reply(@"ok"); }
-            else reply(@"connect failed");
+            if (ok) { [[PWCentral shared] writeFrame:frame]; if (reply) reply(@"ok"); }
+            else if (reply) reply(@"connect failed");
         };
         if (self.cm.state == CBManagerStatePoweredOn && !self.periph) {
             [self.cm scanForPeripheralsWithServices:@[[CBUUID UUIDWithString:SVC_UUID]] options:nil];
         }
     } else {
         [self writeFrame:frame];
-        reply(@"ok");
+        if (reply) reply(@"ok");
     }
 }
 

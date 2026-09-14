@@ -50,6 +50,7 @@ static BOOL RCSpeakerOn(void) {
 
 static NSString *savedCategory_global = nil;
 static BOOL g_speakerOn = NO;
+static BOOL g_lastApplied = NO;
 
 static BOOL RouteIsSpeaker(void) {
     AVAudioSession *s = [AVAudioSession sharedInstance];
@@ -108,8 +109,8 @@ static void ToggleCallback(void) {
                     AppLog("route output: %s", out.portType.UTF8String ? out.portType.UTF8String : "?");
                 }
             }
-            if (on) { if (!spk) applySpeakerMode(); }
-            else restoreHeadphoneMode();
+            if (on) { if (!spk) applySpeakerMode(); g_lastApplied = YES; }
+            else { restoreHeadphoneMode(); g_lastApplied = NO; }
         } @catch (NSException *e) { AppLog("toggle exception"); }
     });
 }
@@ -283,5 +284,20 @@ static void TryInitAVHooks(void) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ TryInitAVHooks(); });
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(8.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ TryInitAVHooks(); });
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ TryInitAVHooks(); });
+    // 状态文件轮询同步（1秒，主机制）：磁贴/快捷指令改状态后所有 App 自动跟随
+    dispatch_source_t rcTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+    dispatch_source_set_timer(rcTimer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), 1ull * NSEC_PER_SEC, 500ull * NSEC_PER_SEC);
+    dispatch_source_set_event_handler(rcTimer, ^{
+        @try {
+            BOOL on = RCSpeakerOn();
+            if (on != g_lastApplied) {
+                AppLog("poll sync: state=%d", on ? 1 : 0);
+                if (on) { if (!RouteIsSpeaker()) applySpeakerMode(); }
+                else restoreHeadphoneMode();
+                g_lastApplied = on;
+            }
+        } @catch (NSException *e) { AppLog("poll exception"); }
+    });
+    dispatch_resume(rcTimer);
     InstallRouteObserver();
 }

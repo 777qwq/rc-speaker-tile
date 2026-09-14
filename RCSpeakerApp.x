@@ -267,10 +267,11 @@ static void TryInitAVHooks(void) {
         NSString *nb = [[NSString alloc] initWithFormat:@"com.rc.apphelper.%@", @"toggle"];
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)ToggleCallback, (__bridge CFStringRef)nb, NULL, CFNotificationSuspensionBehaviorCoalesce);
         // libnotify 原生 GCD 注册（双名，独立于 CF 运行环机制）
+        extern uint32_t notify_register_dispatch(const char *name, int *out_token, dispatch_queue_t queue, void (^handler)(int));
         int t1 = 0, t2 = 0;
-        notify_register_dispatch("com.rc.apphelper.toggle", &t1, dispatch_get_main_queue(), ^(int t){ ToggleCallback(); });
+        notify_register_dispatch("com.rc.apphelper.toggle", &t1, dispatch_get_main_queue(), ^(int token){ ToggleCallback(); });
         NSString *nb2 = [[NSString alloc] initWithFormat:@"com.rc.apphelper.%@", @"toggle"];
-        notify_register_dispatch(nb2.UTF8String, &t2, dispatch_get_main_queue(), ^(int t){ ToggleCallback(); });
+        notify_register_dispatch(nb2.UTF8String, &t2, dispatch_get_main_queue(), ^(int token){ ToggleCallback(); });
         AppLog("observers: CF dual + libnotify dispatch dual registered");
     }
     AppLog("hook loaded, bid=%s", myBid ? myBid.UTF8String : "(null)");

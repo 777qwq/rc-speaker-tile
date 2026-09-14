@@ -61,9 +61,9 @@ static NSString * const CHR_UUID = @"49535343-8841-43F4-A8D4-ECBE34729BB3";
 
 - (void)centralManager:(CBCentralManager *)central didDiscoverPeripheral:(CBPeripheral *)peripheral advertisementData:(NSDictionary<NSString *,id> *)advertisementData RSSI:(NSNumber *)RSSI {
     NSMutableString *line = [NSMutableString stringWithFormat:@"DISCOVERED name=%@ id=%@ rssi=%@", peripheral.name ?: @"(nil)", peripheral.identifier.UUIDString, RSSI];
-    id su = advertisementData[CBAdvertiseDataServiceUUIDsKey];
+    id su = advertisementData[CBAdvertisementDataServiceUUIDsKey];
     if (su) [line appendFormat:@" svc=%@", su];
-    id mfg = advertisementData[CBAdvertiseDataManufacturerDataKey];
+    id mfg = advertisementData[CBAdvertisementDataManufacturerDataKey];
     if (mfg) [line appendFormat:@" mfg=%@", mfg];
     CLog(line);
     // 命中散热器（名字或广播含目标服务）才连接

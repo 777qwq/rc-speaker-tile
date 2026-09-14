@@ -6,9 +6,9 @@ INSTALL_TARGET_PROCESSES = SpringBoard
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = PWProbe
-PWProbe_FILES = PWProbe.x
-PWProbe_FRAMEWORKS = CoreBluetooth
-PWProbe_LDFLAGS = -undefined dynamic_lookup
+TWEAK_NAME = PWCTL
+PWCTL_FILES = PWCTL.x
+PWCTL_FRAMEWORKS = CoreBluetooth UIKit
+PWCTL_LDFLAGS = -undefined dynamic_lookup
 
 include $(THEOS_MAKE_PATH)/tweak.mk

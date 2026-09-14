@@ -1,6 +1,6 @@
 Package: com.pw.cooler.probe
 Name: PW BLE Probe
-Version: 1.0
+Version: 1.1
 Architecture: iphoneos-arm64
 Description: 临时诊断：记录所有App的CoreBluetooth写入。测完卸载。
 Depends: mobilesubstrate

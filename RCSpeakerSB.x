@@ -85,8 +85,10 @@ static void RCLog(const char *msg) {
                 NSString *cur = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
                 BOOL on = ![cur isEqualToString:@"1"];
                 [on ? @"1" : @"0" writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
-                CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR("com.rc.apphelper.toggle"), NULL, NULL, YES);
-                RCLog(on ? "toggled ON via http" : "toggled OFF via http");
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR("com.rc.apphelper.toggle"), NULL, NULL, YES);
+                    RCLog(on ? "toggled ON via http (main thread post)" : "toggled OFF via http (main thread post)");
+                });
             } else {
                 const char *resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
                 write(cfd, resp, strlen(resp));

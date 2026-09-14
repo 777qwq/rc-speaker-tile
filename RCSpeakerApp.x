@@ -38,10 +38,11 @@ static NSArray *RCStatePaths(void) {
 static BOOL RCSpeakerOn(void) {
     for (NSString *p in RCStatePaths()) {
         FILE *f = fopen(p.UTF8String, "r");
-        if (!f) continue;
+        if (!f) { AppLog("state check: %s (unreadable)", p.UTF8String); continue; }
         char buf[8]; memset(buf, 0, sizeof(buf));
         size_t n = fread(buf, 1, sizeof(buf) - 1, f);
         fclose(f);
+        AppLog("state check: %s = %s", p.UTF8String, (n > 0 && buf[0] == '1') ? "1" : (n > 0 ? buf : "empty"));
         if (n > 0 && buf[0] == '1') return YES;
     }
     return NO;
@@ -98,7 +99,16 @@ static void restoreHeadphoneMode(void) {
 static void ToggleCallback(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         @try {
-            if (RCSpeakerOn()) { if (!RouteIsSpeaker()) applySpeakerMode(); }
+            BOOL on = RCSpeakerOn();
+            BOOL spk = RouteIsSpeaker();
+            AppLog("callback: state=%d routeIsSpeaker=%d", on ? 1 : 0, spk ? 1 : 0);
+            if (!spk) {
+                AVAudioSession *s = [AVAudioSession sharedInstance];
+                for (AVAudioSessionPortDescription *out in s.currentRoute.outputs) {
+                    AppLog("route output: %s", out.portType.UTF8String ? out.portType.UTF8String : "?");
+                }
+            }
+            if (on) { if (!spk) applySpeakerMode(); }
             else restoreHeadphoneMode();
         } @catch (NSException *e) { AppLog("toggle exception"); }
     });

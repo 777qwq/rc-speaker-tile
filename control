@@ -1,8 +1,8 @@
-Package: com.rc.speaker
-Name: 声音路由切换助手
-Version: 5.8.0
+Package: com.pw.cooler.probe
+Name: PW BLE Probe
+Version: 1.0
 Architecture: iphoneos-arm64
-Description: 扬声器/耳机全局切换 + 控制中心磁贴 一体包（v4.4.9: 播放钩子替代定时器）
+Description: 临时诊断：记录所有App的CoreBluetooth写入。测完卸载。
 Depends: mobilesubstrate
 Maintainer: RC
 Author: RC

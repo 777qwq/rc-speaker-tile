@@ -86,8 +86,8 @@ static void RCLog(const char *msg) {
                 BOOL on = ![cur isEqualToString:@"1"];
                 [on ? @"1" : @"0" writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR("com.rc.apphelper.toggle"), NULL, NULL, YES);
-                    RCLog(on ? "toggled ON via http (main thread post)" : "toggled OFF via http (main thread post)");
+                    notify_post("com.rc.apphelper.toggle");
+                    RCLog(on ? "toggled ON via http (notify_post)" : "toggled OFF via http (notify_post)");
                 });
             } else {
                 const char *resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";

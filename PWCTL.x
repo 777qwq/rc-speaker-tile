@@ -63,7 +63,7 @@ static NSString * const CHR_UUID = @"49535343-8841-43F4-A8D4-ECBE34729BB3";
     NSMutableString *line = [NSMutableString stringWithFormat:@"DISCOVERED name=%@ id=%@ rssi=%@", peripheral.name ?: @"(nil)", peripheral.identifier.UUIDString, RSSI];
     id su = advertisementData[CBAdvertiseDataServiceUUIDsKey];
     if (su) [line appendFormat:@" svc=%@", su];
-    id mfg = advertisementData[CBAdvertiseDataManufacturerDataKeyKey];
+    id mfg = advertisementData[CBAdvertiseDataManufacturerDataKey];
     if (mfg) [line appendFormat:@" mfg=%@", mfg];
     CLog(line);
     // 命中散热器（名字或广播含目标服务）才连接
@@ -72,7 +72,7 @@ static NSString * const CHR_UUID = @"49535343-8841-43F4-A8D4-ECBE34729BB3";
         for (CBUUID *u in su) if ([u.UUIDString isEqualToString:SVC_UUID]) hit = YES;
     }
     NSString *nm = (peripheral.name ?: @"").lowercaseString;
-    if ([nm containsString:@"pw"] || [nm containsString:@"piva"] || [nm containsString:@"rypiva"] || [nm containsString:@"cooler"] || [nm containsString:@"散热"]) hit = YES;
+    if ([nm containsString:@"b2max"] || [nm containsString:@"pw"] || [nm containsString:@"piva"] || [nm containsString:@"rypiva"] || [nm containsString:@"cooler"] || [nm containsString:@"散热"]) hit = YES;
     if (hit) {
         CLog(@"HIT target, connecting");
         self.periph = peripheral;
@@ -139,7 +139,8 @@ static NSString * const CHR_UUID = @"49535343-8841-43F4-A8D4-ECBE34729BB3";
 
 - (void)writeFrame:(NSData *)d {
     if (self.wchr && self.periph) {
-        [self.periph writeValue:d forCharacteristic:self.wchr type:CBCharacteristicWriteWithResponse];
+        CBCharacteristicWriteType t = (self.wchr.properties & CBCharacteristicPropertyWriteWithoutResponse) ? CBCharacteristicWriteWithoutResponse : CBCharacteristicWriteWithResponse;
+        [self.periph writeValue:d forCharacteristic:self.wchr type:t];
         CLog(@"frame written");
     } else {
         CLog(@"write skipped, not ready");

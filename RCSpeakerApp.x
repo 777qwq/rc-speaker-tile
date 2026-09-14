@@ -263,6 +263,11 @@ static void TryInitAVHooks(void) {
     %init;
     NSString *myBid = [[NSBundle mainBundle] bundleIdentifier];
     CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)ToggleCallback, CFSTR("com.rc.apphelper.toggle"), NULL, CFNotificationSuspensionBehaviorCoalesce);
+    {
+        NSString *nb = [[NSString alloc] initWithFormat:@"com.rc.apphelper.%@", @"toggle"];
+        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)ToggleCallback, (__bridge CFStringRef)nb, NULL, CFNotificationSuspensionBehaviorCoalesce);
+        AppLog("observers: literal + runtime dual registered");
+    }
     AppLog("hook loaded, bid=%s", myBid ? myBid.UTF8String : "(null)");
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         if (RCSpeakerOn()) { AppLog("state=ON at launch"); if (!RouteIsSpeaker()) applySpeakerMode(); }

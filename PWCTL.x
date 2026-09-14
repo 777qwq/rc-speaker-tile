@@ -4,6 +4,9 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 static void CLog(NSString *msg) {
     NSString *p = [[NSString alloc] initWithFormat:@"/var/mob%@/pw_ctl.log", @"ile"];
@@ -121,7 +124,7 @@ static NSString * const CHR_UUID = @"49535343-8841-43F4-A8D4-ECBE34729BB3";
 
 - (void)writeFrame:(NSData *)d {
     if (self.wchr && self.periph) {
-        [self.periph writeValue:d forCharacteristic:self.wchr type:CBCharacteristicWriteTypeWithResponse];
+        [self.periph writeValue:d forCharacteristic:self.wchr type:CBCharacteristicWriteWithResponse];
         CLog(@"frame written");
     } else {
         CLog(@"write skipped, not ready");

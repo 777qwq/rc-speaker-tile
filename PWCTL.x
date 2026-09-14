@@ -153,7 +153,7 @@ static void StartServer(void) {
             if (cfd < 0) continue;
             memset(buf, 0, sizeof(buf));
             read(cfd, buf, sizeof(buf) - 1);
-            CLog(buf);
+            CLog([NSString stringWithUTF8String:buf]);
             const char *resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
             if (strstr(buf, "/cooler?on=1")) {
                 [[PWCentral shared] requestState:YES reply:nil];

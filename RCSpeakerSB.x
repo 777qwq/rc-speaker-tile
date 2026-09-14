@@ -22,8 +22,8 @@ static NSString *RCToggleName(void) {
 #include <mach-o/dyld.h>
 
 static void RCLog(const char *msg) {
-    return; // logging disabled
-    int fd = open("/var/mobile/rc_debug531.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
+    NSString *lp = [[NSString alloc] initWithFormat:@"/var/mob%@/rc_debug531.log", @"ile"];
+    int fd = open(lp.UTF8String, O_WRONLY | O_CREAT | O_APPEND, 0644);
     if (fd < 0) return;
     if (lseek(fd, 0, SEEK_END) > 200 * 1024) { close(fd); fd = open("/var/mobile/rc_debug.log", O_WRONLY | O_CREAT | O_TRUNC, 0644); if (fd < 0) return; }
     char buf[512];
@@ -81,9 +81,12 @@ static void RCLog(const char *msg) {
                 const char *resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
                 write(cfd, resp, strlen(resp));
                 close(cfd);
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [(id)[UIApplication sharedApplication] performSelector:@selector(rcDoToggle)];
-                });
+                NSString *path = [[NSString alloc] initWithFormat:@"/var/mob%@/.rc_speaker_on", @"ile"];
+                NSString *cur = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
+                BOOL on = ![cur isEqualToString:@"1"];
+                [on ? @"1" : @"0" writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
+                CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR("com.rc.apphelper.toggle"), NULL, NULL, YES);
+                RCLog(on ? "toggled ON via http" : "toggled OFF via http");
             } else {
                 const char *resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
                 write(cfd, resp, strlen(resp));

@@ -95,11 +95,7 @@ static void RCLog(const char *msg) {
                 [on ? @"1" : @"0" writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
                 dispatch_async(dispatch_get_main_queue(), ^{
                     notify_post("com.rc.apphelper.toggle");
-                    NSString *nb = [[NSString alloc] initWithFormat:@"com.rc.apphelper.%@", @"toggle"];
-                    notify_post(nb.UTF8String);
-                    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR("com.rc.apphelper.toggle"), NULL, NULL, YES);
-                    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), (__bridge CFStringRef)nb, NULL, NULL, YES);
-                    RCLog(on ? "toggled ON via http (shotgun x4)" : "toggled OFF via http (shotgun x4)");
+                    RCLog(on ? "toggled via http (main notify_post)" : "toggled OFF via http (main notify_post)");
                 });
             } else {
                 const char *resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";

@@ -5,6 +5,10 @@
 static void PLog(NSString *msg) {
     NSString *p = [[NSString alloc] initWithFormat:@"/var/mob%@/pw_probe.log", @"ile"];
     FILE *f = fopen(p.UTF8String, "a");
+    if (!f) {
+        NSString *alt = [[NSString alloc] initWithFormat:@"%@pw_probe_%@.log", NSTemporaryDirectory(), [[NSBundle mainBundle] bundleIdentifier] ?: @"unknown"];
+        f = fopen(alt.UTF8String, "a");
+    }
     if (!f) return;
     fseek(f, 0, SEEK_END);
     if (ftell(f) > 200 * 1024) { fclose(f); f = fopen(p.UTF8String, "w"); if (!f) return; }

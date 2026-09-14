@@ -6,9 +6,7 @@ INSTALL_TARGET_PROCESSES = SpringBoard
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = RCSpeakerSB RCSpeakerApp
-RCSpeakerSB_FILES = RCSpeakerSB.x
-RCSpeakerSB_FRAMEWORKS = UIKit Foundation
+TWEAK_NAME = RCSpeakerApp
 RCSpeakerApp_FILES = RCSpeakerApp.x
 RCSpeakerApp_FRAMEWORKS = AVFAudio AVFoundation
 RCSpeakerApp_LDFLAGS = -undefined dynamic_lookup

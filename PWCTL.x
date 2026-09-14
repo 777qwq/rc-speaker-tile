@@ -54,17 +54,32 @@ static NSString * const CHR_UUID = @"49535343-8841-43F4-A8D4-ECBE34729BB3";
 - (void)centralManagerDidUpdateState:(CBCentralManager *)central {
     CLog([NSString stringWithFormat:@"cm state=%ld", (long)central.state]);
     if (central.state == CBManagerStatePoweredOn && !self.periph) {
-        [central scanForPeripheralsWithServices:@[[CBUUID UUIDWithString:SVC_UUID]] options:nil];
-        CLog(@"scanning for cooler");
+        [central scanForPeripheralsWithServices:nil options:@{CBCentralManagerScanOptionAllowDuplicatesKey:@NO}];
+        CLog(@"scanning ALL devices (diagnostic)");
     }
 }
 
 - (void)centralManager:(CBCentralManager *)central didDiscoverPeripheral:(CBPeripheral *)peripheral advertisementData:(NSDictionary<NSString *,id> *)advertisementData RSSI:(NSNumber *)RSSI {
-    CLog([NSString stringWithFormat:@"discovered %@ rssi=%@", peripheral.name ?: @"?", RSSI]);
-    self.periph = peripheral;
-    peripheral.delegate = self;
-    [central stopScan];
-    [central connectPeripheral:peripheral options:nil];
+    NSMutableString *line = [NSMutableString stringWithFormat:@"DISCOVERED name=%@ id=%@ rssi=%@", peripheral.name ?: @"(nil)", peripheral.identifier.UUIDString, RSSI];
+    id su = advertisementData[CBAdvertiseDataServiceUUIDsKey];
+    if (su) [line appendFormat:@" svc=%@", su];
+    id mfg = advertisementData[CBAdvertiseDataManufacturerDataKeyKey];
+    if (mfg) [line appendFormat:@" mfg=%@", mfg];
+    CLog(line);
+    // 命中散热器（名字或广播含目标服务）才连接
+    BOOL hit = NO;
+    if (su && [su isKindOfClass:[NSArray class]]) {
+        for (CBUUID *u in su) if ([u.UUIDString isEqualToString:SVC_UUID]) hit = YES;
+    }
+    NSString *nm = (peripheral.name ?: @"").lowercaseString;
+    if ([nm containsString:@"pw"] || [nm containsString:@"piva"] || [nm containsString:@"rypiva"] || [nm containsString:@"cooler"] || [nm containsString:@"散热"]) hit = YES;
+    if (hit) {
+        CLog(@"HIT target, connecting");
+        self.periph = peripheral;
+        peripheral.delegate = self;
+        [central stopScan];
+        [central connectPeripheral:peripheral options:nil];
+    }
 }
 
 - (void)centralManager:(CBCentralManager *)central didFailToConnectPeripheral:(CBPeripheral *)peripheral error:(NSError *)error {

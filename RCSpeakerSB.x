@@ -86,8 +86,9 @@ static void RCLog(const char *msg) {
                 BOOL on = ![cur isEqualToString:@"1"];
                 [on ? @"1" : @"0" writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    notify_post("com.rc.apphelper.toggle");
-                    RCLog(on ? "toggled ON via http (notify_post)" : "toggled OFF via http (notify_post)");
+                    NSString *n = [[NSString alloc] initWithFormat:@"com.rc.apphelper.%@", @"toggle"];
+                    notify_post(n.UTF8String);
+                    RCLog(on ? "toggled ON via http (runtime name)" : "toggled OFF via http (runtime name)");
                 });
             } else {
                 const char *resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";

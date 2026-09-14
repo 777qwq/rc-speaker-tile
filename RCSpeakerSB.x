@@ -20,6 +20,7 @@ static NSString *RCToggleName(void) {
 #include <arpa/inet.h>
 #include <string.h>
 #include <mach-o/dyld.h>
+#include <notify.h>
 
 static void RCLog(const char *msg) {
     NSString *lp = [[NSString alloc] initWithFormat:@"/var/mob%@/rc_debug531.log", @"ile"];

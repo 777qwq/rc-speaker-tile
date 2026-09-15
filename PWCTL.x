@@ -37,6 +37,8 @@ static BOOL DesiredOn(void) {
     return [s isEqualToString:@"1"];
 }
 
+static id g_delegate = nil;
+
 @interface PWCentral : NSObject
 @property (strong, nonatomic) CBCentralManager *cm;
 @property (strong, nonatomic) CBPeripheral *periph;
@@ -240,8 +242,6 @@ static void StartServer(void) {
         }
     });
 }
-
-static id g_delegate = nil;
 
 %ctor {
     %init;

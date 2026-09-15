@@ -128,11 +128,12 @@ static void ToggleScreen(void) {
     }
     if (self.wchr && self.pendingFrame) {
         NSData *f = self.pendingFrame; self.pendingFrame = nil;
-        [self writeFrame:f];
+        CLog(@"pending frame present, dispatching write");
+        dispatch_async(dispatch_get_main_queue(), ^{ [self writeFrame:f]; }); // 脱离CB回调上下文
     }
     if (self.wchr && self.pendingReply) {
         void (^r)(NSString *) = self.pendingReply; self.pendingReply = nil;
-        r(@"ok");
+        dispatch_async(dispatch_get_main_queue(), ^{ r(@"ok"); });
     }
 }
 
@@ -160,9 +161,14 @@ static void ToggleScreen(void) {
 
 - (void)writeFrame:(NSData *)d {
     if (self.wchr && self.periph) {
-        CBCharacteristicWriteType t = (self.wchr.properties & CBCharacteristicPropertyWriteWithoutResponse) ? CBCharacteristicWriteWithoutResponse : CBCharacteristicWriteWithResponse;
-        [self.periph writeValue:d forCharacteristic:self.wchr type:t];
-        CLog(@"frame written");
+        CLog(@"writeValue enter");
+        @try {
+            CBCharacteristicWriteType t = (self.wchr.properties & CBCharacteristicPropertyWriteWithoutResponse) ? CBCharacteristicWriteWithoutResponse : CBCharacteristicWriteWithResponse;
+            [self.periph writeValue:d forCharacteristic:self.wchr type:t];
+            CLog(@"frame written");
+        } @catch (NSException *ex) {
+            CLog([NSString stringWithFormat:@"write exception: %@", ex]);
+        }
     } else {
         CLog(@"write skipped, not ready");
     }

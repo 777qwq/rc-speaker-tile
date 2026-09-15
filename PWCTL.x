@@ -212,9 +212,9 @@ static void StartServer(void) {
         CLog(@"ctl loaded");
         [PWCentral shared];
         StartServer();
-        // 守护扫描窗口：每15秒扫3秒
+        // 守护扫描窗口：每30分钟扫3秒（超低功耗，来电后最多30分钟内压制）
         dispatch_source_t guardTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
-        dispatch_source_set_timer(guardTimer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10.0 * NSEC_PER_SEC)), 15ull * NSEC_PER_SEC, 2ull * NSEC_PER_SEC);
+        dispatch_source_set_timer(guardTimer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30.0 * NSEC_PER_SEC)), 1800ull * NSEC_PER_SEC, 60ull * NSEC_PER_SEC);
         dispatch_source_set_event_handler(guardTimer, ^{ GuardTick(); });
         dispatch_resume(guardTimer);
     });

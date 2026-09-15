@@ -159,19 +159,21 @@ static BOOL g_displayOn = YES;
 
 static void ToggleDisplay(void) { g_displayOn = !g_displayOn; }
 
+#import <objc/message.h>
+
 static BOOL ScreenUsable(void) {
     BOOL locked = NO;
     id lockCtl = objc_getClass("SBLockStateController");
     if (lockCtl) {
-        id inst = [(id)lockCtl sharedInstance];
-        if (inst && [inst respondsToSelector:@selector(isLocked)]) locked = [inst isLocked];
+        id inst = ((id(*)(id, SEL))objc_msgSend)(lockCtl, @selector(sharedInstance));
+        if (inst && [(id)inst respondsToSelector:@selector(isLocked)]) locked = ((BOOL(*)(id, SEL))objc_msgSend)(inst, @selector(isLocked));
     }
     if (locked) return NO;
     BOOL screenOn = g_displayOn;
     id blc = objc_getClass("SBBacklightController");
     if (blc) {
-        id inst = [(id)blc sharedInstance];
-        if (inst && [inst respondsToSelector:@selector(backlightLevel)]) screenOn = ([inst backlightLevel] > 0);
+        id inst = ((id(*)(id, SEL))objc_msgSend)(blc, @selector(sharedInstance));
+        if (inst && [(id)inst respondsToSelector:@selector(backlightLevel)]) screenOn = (((float(*)(id, SEL))objc_msgSend)(inst, @selector(backlightLevel)) > 0);
     }
     return screenOn;
 }

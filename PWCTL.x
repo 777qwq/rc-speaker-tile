@@ -270,6 +270,8 @@ static void LockStateChanged(void) {
     }
 }
 
+static void ChargingGuardCheck(void);
+
 static void OnLockStateEvent(void) {
     LockStateChanged();   // 锁屏 → 强制关闭（独立条件）
     ChargingGuardCheck(); // 充电+锁屏 → 恢复期望状态

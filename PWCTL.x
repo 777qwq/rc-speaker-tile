@@ -1,5 +1,7 @@
 #import <CoreBluetooth/CoreBluetooth.h>
 #import <UIKit/UIKit.h>
+#import <IOKit/ps/IOPowerSources.h>
+#import <IOKit/ps/IOPSKeys.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 #include <stdio.h>
@@ -192,17 +194,66 @@ static Class BuildDelegateClass(void) {
 
 static BOOL g_guardEnabled = YES;
 
+static BOOL g_displayOn = YES;
+
+static void ToggleDisplay(void) { g_displayOn = !g_displayOn; }
+
+static BOOL ScreenUsable(void) {
+    BOOL locked = NO;
+    id lockCtl = objc_getClass("SBLockStateController");
+    if (lockCtl) {
+        id inst = ((id(*)(id, SEL))objc_msgSend)(lockCtl, @selector(sharedInstance));
+        if (inst && [(id)inst respondsToSelector:@selector(isLocked)]) locked = ((BOOL(*)(id, SEL))objc_msgSend)(inst, @selector(isLocked));
+    }
+    if (locked) return NO; // 密码锁屏 → 可触发
+    BOOL screenOn = g_displayOn;
+    id blc = objc_getClass("SBBacklightController");
+    if (blc) {
+        id inst = ((id(*)(id, SEL))objc_msgSend)(blc, @selector(sharedInstance));
+        if (inst && [(id)inst respondsToSelector:@selector(backlightLevel)]) screenOn = (((float(*)(id, SEL))objc_msgSend)(inst, @selector(backlightLevel)) > 0);
+    }
+    return screenOn; // 亮屏未锁 → 不触发
+}
+
+static BOOL PowerCharging(void) {
+    CFTypeRef info = IOPSCopyPowerSourcesInfo();
+    if (!info) return NO;
+    CFArrayRef list = IOPSCopyPowerSourcesList(info);
+    BOOL charging = NO;
+    if (list) {
+        for (CFIndex i = 0; i < CFArrayGetCount(list); i++) {
+            CFTypeRef ps = CFArrayGetValueAtIndex(list, i);
+            CFDictionaryRef desc = IOPSGetPowerSourceDescription(info, ps);
+            if (!desc) continue;
+            CFBooleanRef b = CFDictionaryGetValue(desc, CFSTR(kIOPSIsChargingKey));
+            if (b && CFBooleanGetValue(b)) { charging = YES; break; }
+        }
+        CFRelease(list);
+    }
+    CFRelease(info);
+    return charging;
+}
+
 static void GuardTick(void) {
     if (!g_guardEnabled) return;
+    if (ScreenUsable()) return; // 亮屏未锁：不打扰
     PWCentral *c = [PWCentral shared];
     if (c.periph || c.scanning) return;
     if (c.cm.state != CBManagerStatePoweredOn) return;
     [c.cm scanForPeripheralsWithServices:nil options:nil];
     c.scanning = YES;
-    CLog(@"guard scan window");
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    CLog(@"guard scan window (charging trigger)");
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         if (PWCentral.shared.scanning) { [PWCentral.shared.cm stopScan]; PWCentral.shared.scanning = NO; }
     });
+}
+
+static void ChargingGuardCheck(void) {
+    if (!g_guardEnabled) return;
+    if (ScreenUsable()) return; // 亮屏未锁不触发
+    if (!PowerCharging()) return; // 未在充电不触发
+    CLog(@"charging detected while locked, enforcing");
+    GuardTick();
 }
 
 static void StartServer(void) {
@@ -251,10 +302,11 @@ static void StartServer(void) {
         g_delegate = [[BuildDelegateClass() alloc] init];
         [PWCentral shared];
         StartServer();
-        // 守护扫描：每15秒一个3秒窗口（发现B2MAX即自动连接+恢复期望状态）
-        dispatch_source_t guardTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
-        dispatch_source_set_timer(guardTimer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10.0 * NSEC_PER_SEC)), 15ull * NSEC_PER_SEC, 2ull * NSEC_PER_SEC);
-        dispatch_source_set_event_handler(guardTimer, ^{ GuardTick(); });
-        dispatch_resume(guardTimer);
+        // 充电事件触发守护：接电且锁屏/灭屏 → 立即压制；灭屏广播用于黑屏判断
+        CFRunLoopSourceRef iopsSrc = IOPSNotificationCreateRunLoopSource(ChargingGuardCheck, NULL);
+        if (iopsSrc) { CFRunLoopAddSource(CFRunLoopGetMain(), iopsSrc, kCFRunLoopDefaultMode); CFRelease(iopsSrc); CLog(@"IOPS notification armed"); }
+        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)ChargingGuardCheck, CFSTR("com.apple.springboard.lockstate"), NULL, CFNotificationSuspensionBehaviorCoalesce);
+        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)ToggleDisplay, CFSTR("com.apple.iokit.hid.displayStatus"), NULL, CFNotificationSuspensionBehaviorCoalesce);
+        CLog(@"guard armed: charging+locked trigger");
     });
 }

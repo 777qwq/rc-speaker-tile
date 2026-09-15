@@ -303,7 +303,7 @@ static void StartServer(void) {
         [PWCentral shared];
         StartServer();
         // 充电事件触发守护：接电且锁屏/灭屏 → 立即压制；灭屏广播用于黑屏判断
-        CFRunLoopSourceRef iopsSrc = IOPSNotificationCreateRunLoopSource(ChargingGuardCheck, NULL);
+        CFRunLoopSourceRef iopsSrc = IOPSNotificationCreateRunLoopSource((IOPowerSourceCallbackType)ChargingGuardCheck, NULL);
         if (iopsSrc) { CFRunLoopAddSource(CFRunLoopGetMain(), iopsSrc, kCFRunLoopDefaultMode); CFRelease(iopsSrc); CLog(@"IOPS notification armed"); }
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)ChargingGuardCheck, CFSTR("com.apple.springboard.lockstate"), NULL, CFNotificationSuspensionBehaviorCoalesce);
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)ToggleDisplay, CFSTR("com.apple.iokit.hid.displayStatus"), NULL, CFNotificationSuspensionBehaviorCoalesce);

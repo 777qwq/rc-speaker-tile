@@ -111,6 +111,24 @@ static BOOL DesiredOn(void) {
     if (self.wchr && self.onReady) { void (^cb)(void) = self.onReady; self.onReady = nil; cb(); }
 }
 
+- (void)peripheral:(CBPeripheral *)peripheral didDiscoverIncludedServicesForService:(CBService *)service error:(NSError *)error {
+    CLog(@"included services discovered");
+}
+- (void)peripheral:(CBPeripheral *)peripheral didUpdateValueForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error {
+    CLog(@"value updated");
+}
+- (void)peripheral:(CBPeripheral *)peripheral didUpdateNotificationStateForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error {
+    CLog(@"notif state updated");
+}
+- (void)peripheral:(CBPeripheral *)peripheral didReadRSSI:(NSNumber *)RSSI error:(NSError *)error {
+    CLog(@"rssi read");
+}
+- (void)peripheral:(CBPeripheral *)peripheral didModifyServices:(NSArray<CBUUID *> *)invalidatedServices {
+    CLog(@"services modified");
+}
+- (void)centralManager:(CBCentralManager *)central willRestoreState:(NSDictionary<NSString *,id> *)state {
+    CLog(@"will restore state");
+}
 - (void)peripheral:(CBPeripheral *)peripheral didWriteValueForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error {
     CLog(error ? @"write err" : @"write ok");
 }

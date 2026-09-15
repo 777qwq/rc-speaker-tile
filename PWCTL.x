@@ -163,7 +163,6 @@ static id g_delegate = nil;
 
 @end
 
-static id g_delegate = nil;
 static Class BuildDelegateClass(void) {
     static Class cls = nil;
     static dispatch_once_t once;

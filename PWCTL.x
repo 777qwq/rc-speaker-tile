@@ -188,8 +188,12 @@ static Class BuildDelegateClass(void) {
     return cls;
 }
 
-// 触发条件（v2.8.0 状态机）：
-//   锁屏（无论是否充电）→ 直接关散热器
+#import <IOKit/ps/IOPowerSources.h>
+#import <IOKit/ps/IOPSKeys.h>
+
+// 触发条件（v2.8.1 状态机）：
+//   锁屏事件 → 关
+//   接电事件 + 当前锁屏 → 关（覆盖"已锁屏时散热器得电自启"场景）
 //   解锁 + 接电 → 忽略
 //   快捷指令 → 直写对应帧
 static void LockStateChanged(void) {
@@ -203,13 +207,32 @@ static void LockStateChanged(void) {
     if (!locked) return; // 解锁动作不处理
     g_initiator = @"lock-off";
     CLog(@"locked -> cooler OFF");
+    ForceOffNow();
+}
+
+static void ForceOffNow(void) {
     PWCentral *c = [PWCentral shared];
+    NSData *off = [NSData dataWithBytes:OFF_FRAME length:FRAME_LEN];
     if (c.wchr) {
-        [c writeFrame:[NSData dataWithBytes:OFF_FRAME length:FRAME_LEN]];
+        [c writeFrame:off];
     } else {
-        c.pendingFrame = [NSData dataWithBytes:OFF_FRAME length:FRAME_LEN];
+        c.pendingFrame = off;
         [c scanWindow];
     }
+}
+
+static void PowerConnectedEvent(void) {
+    if (!g_guardEnabled) return;
+    BOOL locked = NO;
+    id lockCtl = objc_getClass("SBLockStateController");
+    if (lockCtl) {
+        id inst = ((id(*)(id, SEL))objc_msgSend)(lockCtl, @selector(sharedInstance));
+        if (inst && [(id)inst respondsToSelector:@selector(isLocked)]) locked = ((BOOL(*)(id, SEL))objc_msgSend)(inst, @selector(isLocked));
+    }
+    if (!locked) { CLog(@"power event while unlocked, ignore"); return; } // 解锁+接电=忽略
+    g_initiator = @"power-off";
+    CLog(@"power event while locked -> OFF");
+    ForceOffNow();
 }
 
 static void StartServer(void) {
@@ -258,8 +281,10 @@ static void StartServer(void) {
         g_delegate = [[BuildDelegateClass() alloc] init];
         [PWCentral shared];
         StartServer();
-        // 锁屏事件 → 关散热器（唯一自动触发条件）
+        // 锁屏事件 → 关；接电事件+锁屏 → 关
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)LockStateChanged, CFSTR("com.apple.springboard.lockstate"), NULL, CFNotificationSuspensionBehaviorCoalesce);
-        CLog(@"guard armed: lock->off");
+        CFRunLoopSourceRef iopsSrc = IOPSNotificationCreateRunLoopSource((IOPowerSourceCallbackType)PowerConnectedEvent, NULL);
+        if (iopsSrc) { CFRunLoopAddSource(CFRunLoopGetMain(), iopsSrc, kCFRunLoopDefaultMode); CFRelease(iopsSrc); }
+        CLog(@"guard armed: lock->off, power+locked->off");
     });
 }

@@ -42,6 +42,7 @@ static void ToggleScreen(void) {
 @interface PWCentral : NSObject
 @property (strong, nonatomic) CBCentralManager *cm;
 @property (strong, nonatomic) CBPeripheral *periph;
+@property (strong, nonatomic) CBPeripheral *known;  // 曾见过的B2MAX：免扫描直连用
 @property (strong, nonatomic) CBCharacteristic *wchr;
 @property (strong, nonatomic) NSData *pendingFrame;   // 待写入帧（连接就绪后发出）
 @property (copy, nonatomic) void (^pendingReply)(NSString *line);
@@ -85,6 +86,7 @@ static void ToggleScreen(void) {
     if (![nm containsString:@"b2max"]) return;
     CLog([NSString stringWithFormat:@"discovered B2MAX via %@ rssi=%@", g_initiator, RSSI]);
     if (self.periph) return;
+    self.known = peripheral;
     self.periph = peripheral;
     peripheral.delegate = g_delegate;
     [central stopScan];
@@ -96,6 +98,7 @@ static void ToggleScreen(void) {
 - (void)cmDidFail:(CBCentralManager *)central p:(CBPeripheral *)peripheral {
     CLog(@"connect failed");
     self.periph = nil;
+    // known 保留：下次触发重试直连
 }
 
 - (void)cmDidConnect:(CBCentralManager *)central p:(CBPeripheral *)peripheral {
@@ -133,6 +136,17 @@ static void ToggleScreen(void) {
     }
 }
 
+- (BOOL)directConnectIfNeeded {
+    if (self.cm.state != CBManagerStatePoweredOn) return NO;
+    if (self.periph || self.wchr) return NO;          // 已在连接/已连接
+    if (!self.known) return NO;                        // 从未见过 → 走扫描
+    self.periph = self.known;
+    self.known.delegate = g_delegate;
+    [self.cm connectPeripheral:self.known options:nil]; // 蓝牙直连不受灭屏限制
+    CLog(@"direct connect (no scan)");
+    return YES;
+}
+
 - (void)scanWindow {
     if (self.periph || self.scanning) return;
     if (self.cm.state != CBManagerStatePoweredOn) return;
@@ -161,7 +175,7 @@ static void ToggleScreen(void) {
         CLog(@"not connected, connecting first");
         self.pendingFrame = frame;
         self.pendingReply = reply;
-        [self scanWindow];
+        if (![self directConnectIfNeeded]) [self scanWindow];
     } else {
         [self writeFrame:frame];
         if (reply) reply(@"ok");
@@ -220,10 +234,10 @@ static void ForceOffNow(void) {
     NSData *off = [NSData dataWithBytes:OFF_FRAME length:FRAME_LEN];
     if (c.wchr) {
         [c writeFrame:off];
-    } else {
-        c.pendingFrame = off;
-        [c scanWindow];
+        return;
     }
+    c.pendingFrame = off;
+    if (![c directConnectIfNeeded]) [c scanWindow];
 }
 
 static void PowerConnectedEvent(void) {

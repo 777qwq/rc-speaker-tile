@@ -196,6 +196,8 @@ static Class BuildDelegateClass(void) {
 //   接电事件 + 当前锁屏 → 关（覆盖"已锁屏时散热器得电自启"场景）
 //   解锁 + 接电 → 忽略
 //   快捷指令 → 直写对应帧
+static void ForceOffNow(void);
+
 static void LockStateChanged(void) {
     if (!g_guardEnabled) return;
     BOOL locked = NO;

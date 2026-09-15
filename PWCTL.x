@@ -84,14 +84,14 @@ static id g_delegate = nil;
 - (void)cmDidDiscover:(CBCentralManager *)central p:(CBPeripheral *)peripheral adv:(NSDictionary *)adv rssi:(NSNumber *)RSSI {
     NSString *nm = (peripheral.name ?: @"").lowercaseString;
     if (![nm containsString:@"b2max"]) return;
-    CLog([NSString stringWithFormat:@"guard discovered B2MAX rssi=%@", RSSI]);
+    CLog([NSString stringWithFormat:@"discovered B2MAX via %@ rssi=%@", g_initiator, RSSI]);
     if (self.periph) return;
     self.periph = peripheral;
     peripheral.delegate = g_delegate;
     [central stopScan];
     self.scanning = NO;
     [central connectPeripheral:peripheral options:nil];
-    CLog(@"guard connecting");
+    CLog([NSString stringWithFormat:@"connecting via %@", g_initiator]);
 }
 
 - (void)cmDidFail:(CBCentralManager *)central p:(CBPeripheral *)peripheral {
@@ -100,12 +100,12 @@ static id g_delegate = nil;
 }
 
 - (void)cmDidConnect:(CBCentralManager *)central p:(CBPeripheral *)peripheral {
-    CLog(@"connected, discovering");
+    CLog([NSString stringWithFormat:@"connected via %@", g_initiator]);
     [peripheral discoverServices:@[[CBUUID UUIDWithString:SVC_UUID]]];
 }
 
 - (void)cmDidDisconnect:(CBCentralManager *)central p:(CBPeripheral *)peripheral {
-    CLog(@"disconnected (guard will re-enforce)");
+    CLog(@"disconnected (re-enforce waits for charging+locked trigger)");
     self.wchr = nil;
     self.periph = nil;
 }
@@ -149,6 +149,7 @@ static id g_delegate = nil;
 
 - (void)requestState:(BOOL)on reply:(void (^)(NSString *line))reply {
     SetDesired(on);
+    g_initiator = @"shortcut";
     NSData *frame = [NSData dataWithBytes:(on ? ON_FRAME : OFF_FRAME) length:FRAME_LEN];
     if (!self.wchr) {
         CLog(@"not connected, connecting first");
@@ -193,6 +194,7 @@ static Class BuildDelegateClass(void) {
 }
 
 static BOOL g_guardEnabled = YES;
+static NSString *g_initiator = @"?"; // 连接发起方：shortcut / guard
 
 static BOOL g_displayOn = YES;
 
@@ -236,6 +238,7 @@ static void GuardTick(void) {
     if (c.cm.state != CBManagerStatePoweredOn) return;
     [c.cm scanForPeripheralsWithServices:nil options:nil];
     c.scanning = YES;
+    g_initiator = @"guard";
     CLog(@"guard scan window (charging trigger)");
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         if (PWCentral.shared.scanning) { [PWCentral.shared.cm stopScan]; PWCentral.shared.scanning = NO; }

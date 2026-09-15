@@ -1,6 +1,6 @@
 Package: com.pw.cooler.ctl
 Name: PW Cooler Control
-Version: 2.6.2
+Version: 2.6.3
 Architecture: iphoneos-arm64
 Description: 派威散热器快捷指令控制器：http://127.0.0.1:18090/cooler?on=1 / on=0
 Depends: mobilesubstrate

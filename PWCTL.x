@@ -17,21 +17,33 @@ static void CLog(NSString *msg) {
     fclose(f);
 }
 
-// 捕获的指令帧
-// 2026-09-14 23:39 实测校准：打开=byte17为0x00，关闭=byte17为0x32
+// 捕获的指令帧（2026-09-14 23:39 校准：打开=byte17 0x00，关闭=byte17 0x32）
 static const unsigned char ON_FRAME[]  = {0x20,0x01,0x16,0x00,0x00,0x00,0x00,0xff,0x00,0x00,0x00,0xff,0x00,0x00,0x00,0xff,0x03,0x01,0x00,0x01,0x02,0x22,0x01,0x01,0x00,0x5f};
 static const unsigned char OFF_FRAME[] = {0x20,0x01,0x16,0x00,0x00,0x00,0x00,0xff,0x00,0x00,0x00,0xff,0x00,0x00,0x00,0xff,0x03,0x01,0x32,0x01,0x02,0x20,0x01,0x00,0x00,0x8e};
 #define FRAME_LEN 26
 static NSString * const SVC_UUID = @"49535343-FE7D-4AE5-8FA9-9FAFD205E455";
 static NSString * const CHR_UUID = @"49535343-8841-43F4-A8D4-ECBE34729BB3";
 
+static NSString *DesiredPath(void) {
+    return [[NSString alloc] initWithFormat:@"/var/mob%@/.pw_cooler_desired", @"ile"];
+}
+static void SetDesired(BOOL on) {
+    [on ? @"1" : @"0" writeToFile:DesiredPath() atomically:YES encoding:NSUTF8StringEncoding error:nil];
+}
+static BOOL DesiredOn(void) {
+    NSString *s = [NSString stringWithContentsOfFile:DesiredPath() encoding:NSUTF8StringEncoding error:nil];
+    return [s isEqualToString:@"1"]; // 文件不存在时默认=关（守护会压制来电自启动）
+}
+
 @interface PWCentral : NSObject <CBCentralManagerDelegate, CBPeripheralDelegate>
 @property (strong, nonatomic) CBCentralManager *cm;
 @property (strong, nonatomic) CBPeripheral *periph;
 @property (strong, nonatomic) CBCharacteristic *wchr;
-@property (copy, nonatomic) void (^onReady)(BOOL ok);
+@property (copy, nonatomic) void (^onReady)(void);
+@property (assign, nonatomic) BOOL scanning;
 + (PWCentral *)shared;
-- (void)requestState:(BOOL)on reply:(void (^)(NSString *line))reply;
+- (void)applyDesired;
+- (void)writeFrame:(NSData *)d;
 @end
 
 @implementation PWCentral
@@ -53,57 +65,39 @@ static NSString * const CHR_UUID = @"49535343-8841-43F4-A8D4-ECBE34729BB3";
 
 - (void)centralManagerDidUpdateState:(CBCentralManager *)central {
     CLog([NSString stringWithFormat:@"cm state=%ld", (long)central.state]);
-    if (central.state == CBManagerStatePoweredOn && !self.periph) {
-        [central scanForPeripheralsWithServices:nil options:@{CBCentralManagerScanOptionAllowDuplicatesKey:@NO}];
-        CLog(@"scanning ALL devices (diagnostic)");
-    }
 }
 
 - (void)centralManager:(CBCentralManager *)central didDiscoverPeripheral:(CBPeripheral *)peripheral advertisementData:(NSDictionary<NSString *,id> *)advertisementData RSSI:(NSNumber *)RSSI {
-    NSMutableString *line = [NSMutableString stringWithFormat:@"DISCOVERED name=%@ id=%@ rssi=%@", peripheral.name ?: @"(nil)", peripheral.identifier.UUIDString, RSSI];
-    id su = advertisementData[CBAdvertisementDataServiceUUIDsKey];
-    if (su) [line appendFormat:@" svc=%@", su];
-    id mfg = advertisementData[CBAdvertisementDataManufacturerDataKey];
-    if (mfg) [line appendFormat:@" mfg=%@", mfg];
-    CLog(line);
-    // 命中散热器（名字或广播含目标服务）才连接
-    BOOL hit = NO;
-    if (su && [su isKindOfClass:[NSArray class]]) {
-        for (CBUUID *u in su) if ([u.UUIDString isEqualToString:SVC_UUID]) hit = YES;
-    }
     NSString *nm = (peripheral.name ?: @"").lowercaseString;
-    if ([nm containsString:@"b2max"] || [nm containsString:@"pw"] || [nm containsString:@"piva"] || [nm containsString:@"rypiva"] || [nm containsString:@"cooler"] || [nm containsString:@"散热"]) hit = YES;
-    if (hit) {
-        CLog(@"HIT target, connecting");
-        self.periph = peripheral;
-        peripheral.delegate = self;
-        [central stopScan];
-        [central connectPeripheral:peripheral options:nil];
-    }
+    if (![nm containsString:@"b2max"]) return; // 只关心散热器，其他设备不记日志
+    CLog([NSString stringWithFormat:@"guard discovered B2MAX rssi=%@", RSSI]);
+    if (self.periph) return;
+    self.periph = peripheral;
+    peripheral.delegate = self;
+    [central stopScan];
+    self.scanning = NO;
+    [central connectPeripheral:peripheral options:nil];
+    CLog(@"guard connecting");
 }
 
 - (void)centralManager:(CBCentralManager *)central didFailToConnectPeripheral:(CBPeripheral *)peripheral error:(NSError *)error {
     CLog(@"connect failed");
     self.periph = nil;
-    if (self.onReady) { void (^cb)(BOOL) = self.onReady; self.onReady = nil; cb(NO); }
 }
 
 - (void)centralManager:(CBCentralManager *)central didConnectPeripheral:(CBPeripheral *)peripheral {
-    CLog(@"connected, discovering services");
+    CLog(@"connected, discovering");
     [peripheral discoverServices:@[[CBUUID UUIDWithString:SVC_UUID]]];
 }
 
 - (void)peripheral:(CBPeripheral *)peripheral didDisconnectPeripheral:(NSError *)error {
-    CLog(@"disconnected");
+    CLog(@"disconnected (guard will re-enforce)");
     self.wchr = nil;
     self.periph = nil;
 }
 
 - (void)peripheral:(CBPeripheral *)peripheral didDiscoverServices:(NSError *)error {
-    for (CBService *svc in peripheral.services) {
-        CLog([NSString stringWithFormat:@"service found %@", svc.UUID.UUIDString]);
-        [peripheral discoverCharacteristics:@[[CBUUID UUIDWithString:CHR_UUID]] forService:svc];
-    }
+    [peripheral discoverCharacteristics:@[[CBUUID UUIDWithString:CHR_UUID]] forService:peripheral.services.firstObject];
 }
 
 - (void)peripheral:(CBPeripheral *)peripheral didDiscoverCharacteristicsForService:(CBService *)service error:(NSError *)error {
@@ -113,28 +107,11 @@ static NSString * const CHR_UUID = @"49535343-8841-43F4-A8D4-ECBE34729BB3";
             CLog(@"write characteristic ready");
         }
     }
-    if (self.wchr && self.onReady) { void (^cb)(BOOL) = self.onReady; self.onReady = nil; cb(YES); }
+    if (self.wchr && self.onReady) { void (^cb)(void) = self.onReady; self.onReady = nil; cb(); }
 }
 
 - (void)peripheral:(CBPeripheral *)peripheral didWriteValueForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error {
     CLog(error ? @"write err" : @"write ok");
-}
-
-- (void)requestState:(BOOL)on reply:(void (^)(NSString *line))reply {
-    NSData *frame = [NSData dataWithBytes:(on ? ON_FRAME : OFF_FRAME) length:FRAME_LEN];
-    if (!self.wchr) {
-        CLog(@"not connected, connecting first");
-        self.onReady = ^(BOOL ok) {
-            if (ok) { [[PWCentral shared] writeFrame:frame]; if (reply) reply(@"ok"); }
-            else if (reply) reply(@"connect failed");
-        };
-        if (self.cm.state == CBManagerStatePoweredOn && !self.periph) {
-            [self.cm scanForPeripheralsWithServices:@[[CBUUID UUIDWithString:SVC_UUID]] options:nil];
-        }
-    } else {
-        [self writeFrame:frame];
-        if (reply) reply(@"ok");
-    }
 }
 
 - (void)writeFrame:(NSData *)d {
@@ -147,7 +124,49 @@ static NSString * const CHR_UUID = @"49535343-8841-43F4-A8D4-ECBE34729BB3";
     }
 }
 
+- (void)applyDesired {
+    BOOL want = DesiredOn();
+    NSData *frame = [NSData dataWithBytes:(want ? ON_FRAME : OFF_FRAME) length:FRAME_LEN];
+    CLog([NSString stringWithFormat:@"applying desired state: %@", want ? @"ON" : @"OFF"]);
+    [self writeFrame:frame];
+}
+
+- (void)requestState:(BOOL)on reply:(void (^)(NSString *line))reply {
+    SetDesired(on);
+    NSData *frame = [NSData dataWithBytes:(on ? ON_FRAME : OFF_FRAME) length:FRAME_LEN];
+    if (!self.wchr) {
+        CLog(@"not connected, connecting first");
+        self.onReady = ^{ [[PWCentral shared] applyDesired]; if (reply) reply(@"ok"); };
+        if (self.cm.state == CBManagerStatePoweredOn && !self.periph && !self.scanning) {
+            [self.cm scanForPeripheralsWithServices:nil options:nil];
+            self.scanning = YES;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                if (self.scanning) { [self.cm stopScan]; self.scanning = NO; }
+            });
+        }
+    } else {
+        [self writeFrame:frame];
+        if (reply) reply(@"ok");
+    }
+}
+
 @end
+
+static BOOL g_scanning = NO;
+static BOOL g_guardEnabled = YES;
+
+static void GuardTick(void) {
+    if (!g_guardEnabled) return;
+    PWCentral *c = [PWCentral shared];
+    if (c.periph || c.scanning) return;
+    if (c.cm.state != CBManagerStatePoweredOn) return;
+    [c.cm scanForPeripheralsWithServices:nil options:nil];
+    c.scanning = YES;
+    CLog(@"guard scan window");
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (c.scanning) { [c.cm stopScan]; c.scanning = NO; }
+    });
+}
 
 static void StartServer(void) {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
@@ -173,11 +192,14 @@ static void StartServer(void) {
             const char *resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
             if (strstr(buf, "/cooler?on=1")) {
                 [[PWCentral shared] requestState:YES reply:nil];
-                resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
             } else if (strstr(buf, "/cooler?on=0")) {
                 [[PWCentral shared] requestState:NO reply:nil];
-            } else if (strstr(buf, "/cooler/status")) {
-                resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
+            } else if (strstr(buf, "/guard?on=0")) {
+                g_guardEnabled = NO;
+                CLog(@"guard disabled");
+            } else if (strstr(buf, "/guard?on=1")) {
+                g_guardEnabled = YES;
+                CLog(@"guard enabled");
             }
             write(cfd, resp, strlen(resp));
             close(cfd);
@@ -191,5 +213,10 @@ static void StartServer(void) {
         CLog(@"ctl loaded");
         [PWCentral shared];
         StartServer();
+        // 守护扫描窗口：每15秒扫3秒
+        dispatch_source_t guardTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+        dispatch_source_set_timer(guardTimer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10.0 * NSEC_PER_SEC)), 15ull * NSEC_PER_SEC, 2ull * NSEC_PER_SEC);
+        dispatch_source_set_event_handler(guardTimer, ^{ GuardTick(); });
+        dispatch_resume(guardTimer);
     });
 }

@@ -12,7 +12,10 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#define PWCTL_LOG 0 // 定版：日志关闭；排障时改为1重新编译即可
+
 static void CLog(NSString *msg) {
+    if (!PWCTL_LOG) return; // 编译期裁剪，零开销
     NSString *p = [[NSString alloc] initWithFormat:@"/var/mob%@/pw_ctl.log", @"ile"];
     FILE *f = fopen(p.UTF8String, "a");
     if (!f) return;

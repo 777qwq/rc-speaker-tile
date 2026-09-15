@@ -211,23 +211,26 @@ static BOOL ScreenUsable(void) {
     return g_displayOn;    // 亮屏未锁 → 不触发；灭屏未锁 → 可触发（displayStatus广播跟踪，无脆弱的类型转换）
 }
 
-static BOOL PowerCharging(void) {
+static BOOL PowerConnected(void) {
     CFTypeRef info = IOPSCopyPowerSourcesInfo();
     if (!info) return NO;
     CFArrayRef list = IOPSCopyPowerSourcesList(info);
-    BOOL charging = NO;
+    BOOL on = NO;
     if (list) {
         for (CFIndex i = 0; i < CFArrayGetCount(list); i++) {
             CFTypeRef ps = CFArrayGetValueAtIndex(list, i);
             CFDictionaryRef desc = IOPSGetPowerSourceDescription(info, ps);
             if (!desc) continue;
+            // 接电判定：AC Power（接通即算，无论是否正在充电——充满后IsCharging为NO但仍是AC）
+            CFStringRef st = CFDictionaryGetValue(desc, CFSTR(kIOPSPowerSourceStateKey));
+            if (st && CFStringCompare(st, CFSTR(kIOPSACPowerValue), 0) == kCFCompareEqualTo) { on = YES; break; }
             CFBooleanRef b = CFDictionaryGetValue(desc, CFSTR(kIOPSIsChargingKey));
-            if (b && CFBooleanGetValue(b)) { charging = YES; break; }
+            if (b && CFBooleanGetValue(b)) { on = YES; break; }
         }
         CFRelease(list);
     }
     CFRelease(info);
-    return charging;
+    return on;
 }
 
 static void GuardTick(void) {
@@ -247,9 +250,9 @@ static void GuardTick(void) {
 
 static void ChargingGuardCheck(void) {
     if (!g_guardEnabled) return;
-    if (!PowerCharging()) return; // 未在充电不触发
-    if (ScreenUsable()) { CLog(@"charging but unlocked+screen on, skip"); return; } // 亮屏未锁不触发
-    CLog(@"charging detected while locked/dark, enforcing");
+    if (!PowerConnected()) { CLog(@"power event: not on AC, skip"); return; }
+    if (ScreenUsable()) { CLog(@"power connected but unlocked+screen on, skip"); return; }
+    CLog(@"power connected while locked/dark, enforcing");
     GuardTick();
 }
 

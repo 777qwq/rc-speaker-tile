@@ -10,7 +10,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define PWCTL_LOG 0 // 定版：日志关闭；排障时改为1重新编译
+#define PWCTL_LOG 1 // 诊断轮：日志开启
 
 static void CLog(NSString *msg) {
     if (!PWCTL_LOG) return;
@@ -30,8 +30,14 @@ static NSString * const SVC_UUID = @"49535343-FE7D-4AE5-8FA9-9FAFD205E455";
 static NSString * const CHR_UUID = @"49535343-8841-43F4-A8D4-ECBE34729BB3";
 
 static id g_delegate = nil;
-static NSString *g_initiator = @"?"; // 连接发起方：shortcut / lock-off
+static NSString *g_initiator = @"?"; // 连接发起方：shortcut / lock-off / power-off
 static BOOL g_guardEnabled = YES;
+static BOOL g_screenOn = YES; // displayStatus广播跟踪（替代不可靠的isLocked查询）
+
+static void ToggleScreen(void) {
+    g_screenOn = !g_screenOn;
+    CLog(g_screenOn ? @"screen ON" : @"screen OFF");
+}
 
 @interface PWCentral : NSObject
 @property (strong, nonatomic) CBCentralManager *cm;
@@ -191,25 +197,22 @@ static Class BuildDelegateClass(void) {
 #import <IOKit/ps/IOPowerSources.h>
 #import <IOKit/ps/IOPSKeys.h>
 
-// 触发条件（v2.8.1 状态机）：
-//   锁屏事件 → 关
-//   接电事件 + 当前锁屏 → 关（覆盖"已锁屏时散热器得电自启"场景）
-//   解锁 + 接电 → 忽略
+// 触发条件（v2.8.2 状态机，屏幕状态判据）：
+//   lockstate事件 → 延迟0.5秒看屏幕：灭=锁屏→关；亮=解锁→忽略
+//   接电事件 + 屏幕灭 → 关；接电 + 屏幕亮 → 忽略
 //   快捷指令 → 直写对应帧
 static void ForceOffNow(void);
 
 static void LockStateChanged(void) {
     if (!g_guardEnabled) return;
-    BOOL locked = NO;
-    id lockCtl = objc_getClass("SBLockStateController");
-    if (lockCtl) {
-        id inst = ((id(*)(id, SEL))objc_msgSend)(lockCtl, @selector(sharedInstance));
-        if (inst && [(id)inst respondsToSelector:@selector(isLocked)]) locked = ((BOOL(*)(id, SEL))objc_msgSend)(inst, @selector(isLocked));
-    }
-    if (!locked) return; // 解锁动作不处理
-    g_initiator = @"lock-off";
-    CLog(@"locked -> cooler OFF");
-    ForceOffNow();
+    CLog(@"lockstate event received");
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (!g_guardEnabled) return;
+        if (g_screenOn) { CLog(@"screen on = unlock action, ignore"); return; } // 亮=解锁动作
+        g_initiator = @"lock-off";
+        CLog(@"locked (screen off) -> cooler OFF");
+        ForceOffNow();
+    });
 }
 
 static void ForceOffNow(void) {
@@ -225,15 +228,10 @@ static void ForceOffNow(void) {
 
 static void PowerConnectedEvent(void) {
     if (!g_guardEnabled) return;
-    BOOL locked = NO;
-    id lockCtl = objc_getClass("SBLockStateController");
-    if (lockCtl) {
-        id inst = ((id(*)(id, SEL))objc_msgSend)(lockCtl, @selector(sharedInstance));
-        if (inst && [(id)inst respondsToSelector:@selector(isLocked)]) locked = ((BOOL(*)(id, SEL))objc_msgSend)(inst, @selector(isLocked));
-    }
-    if (!locked) { CLog(@"power event while unlocked, ignore"); return; } // 解锁+接电=忽略
+    CLog(@"power event received");
+    if (g_screenOn) { CLog(@"screen on, ignore"); return; } // 亮屏使用中=忽略
     g_initiator = @"power-off";
-    CLog(@"power event while locked -> OFF");
+    CLog(@"power event with screen off -> OFF");
     ForceOffNow();
 }
 
@@ -283,8 +281,9 @@ static void StartServer(void) {
         g_delegate = [[BuildDelegateClass() alloc] init];
         [PWCentral shared];
         StartServer();
-        // 锁屏事件 → 关；接电事件+锁屏 → 关
+        // 锁屏事件 → 关；接电事件+屏灭 → 关；displayStatus 跟踪屏幕状态
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)LockStateChanged, CFSTR("com.apple.springboard.lockstate"), NULL, CFNotificationSuspensionBehaviorCoalesce);
+        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)ToggleScreen, CFSTR("com.apple.iokit.hid.displayStatus"), NULL, CFNotificationSuspensionBehaviorCoalesce);
         CFRunLoopSourceRef iopsSrc = IOPSNotificationCreateRunLoopSource((IOPowerSourceCallbackType)PowerConnectedEvent, NULL);
         if (iopsSrc) { CFRunLoopAddSource(CFRunLoopGetMain(), iopsSrc, kCFRunLoopDefaultMode); CFRelease(iopsSrc); }
         CLog(@"guard armed: lock->off, power+locked->off");

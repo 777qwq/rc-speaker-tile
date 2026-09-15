@@ -205,14 +205,8 @@ static BOOL ScreenUsable(void) {
         id inst = ((id(*)(id, SEL))objc_msgSend)(lockCtl, @selector(sharedInstance));
         if (inst && [(id)inst respondsToSelector:@selector(isLocked)]) locked = ((BOOL(*)(id, SEL))objc_msgSend)(inst, @selector(isLocked));
     }
-    if (locked) return NO; // 密码锁屏 → 可触发
-    BOOL screenOn = g_displayOn;
-    id blc = objc_getClass("SBBacklightController");
-    if (blc) {
-        id inst = ((id(*)(id, SEL))objc_msgSend)(blc, @selector(sharedInstance));
-        if (inst && [(id)inst respondsToSelector:@selector(backlightLevel)]) screenOn = (((float(*)(id, SEL))objc_msgSend)(inst, @selector(backlightLevel)) > 0);
-    }
-    return screenOn; // 亮屏未锁 → 不触发
+    if (locked) return NO; // 锁屏 → 可触发
+    return g_displayOn;    // 亮屏未锁 → 不触发；灭屏未锁 → 可触发（displayStatus广播跟踪，无脆弱的类型转换）
 }
 
 static BOOL PowerCharging(void) {

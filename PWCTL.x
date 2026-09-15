@@ -249,5 +249,10 @@ static void StartServer(void) {
         g_delegate = [[BuildDelegateClass() alloc] init];
         [PWCentral shared];
         StartServer();
+        // 守护扫描：每15秒一个3秒窗口（发现B2MAX即自动连接+恢复期望状态）
+        dispatch_source_t guardTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+        dispatch_source_set_timer(guardTimer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10.0 * NSEC_PER_SEC)), 15ull * NSEC_PER_SEC, 2ull * NSEC_PER_SEC);
+        dispatch_source_set_event_handler(guardTimer, ^{ GuardTick(); });
+        dispatch_resume(guardTimer);
     });
 }

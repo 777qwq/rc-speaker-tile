@@ -1,7 +1,5 @@
 #import <CoreBluetooth/CoreBluetooth.h>
 #import <UIKit/UIKit.h>
-#import <IOKit/ps/IOPowerSources.h>
-#import <IOKit/ps/IOPSKeys.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 #include <stdio.h>
@@ -12,10 +10,10 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define PWCTL_LOG 0 // 定版：日志关闭；排障时改为1重新编译即可
+#define PWCTL_LOG 0 // 定版：日志关闭；排障时改为1重新编译
 
 static void CLog(NSString *msg) {
-    if (!PWCTL_LOG) return; // 编译期裁剪，零开销
+    if (!PWCTL_LOG) return;
     NSString *p = [[NSString alloc] initWithFormat:@"/var/mob%@/pw_ctl.log", @"ile"];
     FILE *f = fopen(p.UTF8String, "a");
     if (!f) return;
@@ -31,24 +29,15 @@ static const unsigned char OFF_FRAME[] = {0x20,0x01,0x16,0x00,0x00,0x00,0x00,0xf
 static NSString * const SVC_UUID = @"49535343-FE7D-4AE5-8FA9-9FAFD205E455";
 static NSString * const CHR_UUID = @"49535343-8841-43F4-A8D4-ECBE34729BB3";
 
-static NSString *DesiredPath(void) {
-    return [[NSString alloc] initWithFormat:@"/var/mob%@/.pw_cooler_desired", @"ile"];
-}
-static void SetDesired(BOOL on) {
-    [on ? @"1" : @"0" writeToFile:DesiredPath() atomically:YES encoding:NSUTF8StringEncoding error:nil];
-}
-static BOOL DesiredOn(void) {
-    NSString *s = [NSString stringWithContentsOfFile:DesiredPath() encoding:NSUTF8StringEncoding error:nil];
-    return [s isEqualToString:@"1"];
-}
-
 static id g_delegate = nil;
-static NSString *g_initiator = @"?"; // 连接发起方：shortcut / guard
+static NSString *g_initiator = @"?"; // 连接发起方：shortcut / lock-off
+static BOOL g_guardEnabled = YES;
 
 @interface PWCentral : NSObject
 @property (strong, nonatomic) CBCentralManager *cm;
 @property (strong, nonatomic) CBPeripheral *periph;
 @property (strong, nonatomic) CBCharacteristic *wchr;
+@property (strong, nonatomic) NSData *pendingFrame;   // 待写入帧（连接就绪后发出）
 @property (copy, nonatomic) void (^pendingReply)(NSString *line);
 @property (assign, nonatomic) BOOL scanning;
 + (PWCentral *)shared;
@@ -59,7 +48,7 @@ static NSString *g_initiator = @"?"; // 连接发起方：shortcut / guard
 - (void)cmDidDisconnect:(CBCentralManager *)cm p:(CBPeripheral *)p;
 - (void)pDidDiscoverServices:(CBPeripheral *)p;
 - (void)pDidDiscoverChars:(CBPeripheral *)p;
-- (void)applyDesired;
+- (void)scanWindow;
 - (void)writeFrame:(NSData *)d;
 - (void)requestState:(BOOL)on reply:(void (^)(NSString *line))reply;
 @end
@@ -108,8 +97,8 @@ static NSString *g_initiator = @"?"; // 连接发起方：shortcut / guard
     [peripheral discoverServices:@[[CBUUID UUIDWithString:SVC_UUID]]];
 }
 
-- (void)cmDidDisconnect:(CBCentralManager *)central p:(CBPeripheral *)peripheral {
-    CLog(@"disconnected (re-enforce waits for charging+locked trigger)");
+- (void)cmDidDisconnect:(CBCentralManager *)cm p:(CBPeripheral *)peripheral {
+    CLog(@"disconnected");
     self.wchr = nil;
     self.periph = nil;
 }
@@ -128,10 +117,25 @@ static NSString *g_initiator = @"?"; // 连接发起方：shortcut / guard
             }
         }
     }
-    if (self.wchr) {
-        [self applyDesired]; // 常驻逻辑：每次连接/重连成功，自动恢复期望状态
-        if (self.pendingReply) { void (^r)(NSString *) = self.pendingReply; self.pendingReply = nil; r(@"ok"); }
+    if (self.wchr && self.pendingFrame) {
+        NSData *f = self.pendingFrame; self.pendingFrame = nil;
+        [self writeFrame:f];
     }
+    if (self.wchr && self.pendingReply) {
+        void (^r)(NSString *) = self.pendingReply; self.pendingReply = nil;
+        r(@"ok");
+    }
+}
+
+- (void)scanWindow {
+    if (self.periph || self.scanning) return;
+    if (self.cm.state != CBManagerStatePoweredOn) return;
+    [self.cm scanForPeripheralsWithServices:nil options:nil];
+    self.scanning = YES;
+    CLog(@"scan window");
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (PWCentral.shared.scanning) { [PWCentral.shared.cm stopScan]; PWCentral.shared.scanning = NO; }
+    });
 }
 
 - (void)writeFrame:(NSData *)d {
@@ -144,27 +148,14 @@ static NSString *g_initiator = @"?"; // 连接发起方：shortcut / guard
     }
 }
 
-- (void)applyDesired {
-    BOOL want = DesiredOn();
-    NSData *frame = [NSData dataWithBytes:(want ? ON_FRAME : OFF_FRAME) length:FRAME_LEN];
-    CLog([NSString stringWithFormat:@"applying desired state: %@", want ? @"ON" : @"OFF"]);
-    [self writeFrame:frame];
-}
-
 - (void)requestState:(BOOL)on reply:(void (^)(NSString *line))reply {
-    SetDesired(on);
     g_initiator = @"shortcut";
     NSData *frame = [NSData dataWithBytes:(on ? ON_FRAME : OFF_FRAME) length:FRAME_LEN];
     if (!self.wchr) {
         CLog(@"not connected, connecting first");
+        self.pendingFrame = frame;
         self.pendingReply = reply;
-        if (self.cm.state == CBManagerStatePoweredOn && !self.periph && !self.scanning) {
-            [self.cm scanForPeripheralsWithServices:nil options:nil];
-            self.scanning = YES;
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                if (PWCentral.shared.scanning) { [PWCentral.shared.cm stopScan]; PWCentral.shared.scanning = NO; }
-            });
-        }
+        [self scanWindow];
     } else {
         [self writeFrame:frame];
         if (reply) reply(@"ok");
@@ -197,59 +188,10 @@ static Class BuildDelegateClass(void) {
     return cls;
 }
 
-static BOOL g_guardEnabled = YES;
-
-static BOOL g_displayOn = YES;
-
-static void ToggleDisplay(void) { g_displayOn = !g_displayOn; }
-
-static BOOL ScreenUsable(void) {
-    BOOL locked = NO;
-    id lockCtl = objc_getClass("SBLockStateController");
-    if (lockCtl) {
-        id inst = ((id(*)(id, SEL))objc_msgSend)(lockCtl, @selector(sharedInstance));
-        if (inst && [(id)inst respondsToSelector:@selector(isLocked)]) locked = ((BOOL(*)(id, SEL))objc_msgSend)(inst, @selector(isLocked));
-    }
-    if (locked) return NO; // 锁屏 → 可触发
-    return g_displayOn;    // 亮屏未锁 → 不触发；灭屏未锁 → 可触发（displayStatus广播跟踪，无脆弱的类型转换）
-}
-
-static BOOL PowerConnected(void) {
-    CFTypeRef info = IOPSCopyPowerSourcesInfo();
-    if (!info) return NO;
-    CFArrayRef list = IOPSCopyPowerSourcesList(info);
-    BOOL on = NO;
-    if (list) {
-        for (CFIndex i = 0; i < CFArrayGetCount(list); i++) {
-            CFTypeRef ps = CFArrayGetValueAtIndex(list, i);
-            CFDictionaryRef desc = IOPSGetPowerSourceDescription(info, ps);
-            if (!desc) continue;
-            // 接电判定：AC Power（接通即算，无论是否正在充电——充满后IsCharging为NO但仍是AC）
-            CFStringRef st = CFDictionaryGetValue(desc, CFSTR(kIOPSPowerSourceStateKey));
-            if (st && CFStringCompare(st, CFSTR(kIOPSACPowerValue), 0) == kCFCompareEqualTo) { on = YES; break; }
-            CFBooleanRef b = CFDictionaryGetValue(desc, CFSTR(kIOPSIsChargingKey));
-            if (b && CFBooleanGetValue(b)) { on = YES; break; }
-        }
-        CFRelease(list);
-    }
-    CFRelease(info);
-    return on;
-}
-
-static void GuardTick(void) {
-    if (!g_guardEnabled) return;
-    if (ScreenUsable()) return; // 亮屏未锁：不打扰
-    PWCentral *c = [PWCentral shared];
-    if (c.periph || c.scanning) return;
-    if (c.cm.state != CBManagerStatePoweredOn) return;
-    [c.cm scanForPeripheralsWithServices:nil options:nil];
-    c.scanning = YES;
-    CLog(@"guard scan window");
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (PWCentral.shared.scanning) { [PWCentral.shared.cm stopScan]; PWCentral.shared.scanning = NO; }
-    });
-}
-
+// 触发条件（v2.8.0 状态机）：
+//   锁屏（无论是否充电）→ 直接关散热器
+//   解锁 + 接电 → 忽略
+//   快捷指令 → 直写对应帧
 static void LockStateChanged(void) {
     if (!g_guardEnabled) return;
     BOOL locked = NO;
@@ -260,30 +202,14 @@ static void LockStateChanged(void) {
     }
     if (!locked) return; // 解锁动作不处理
     g_initiator = @"lock-off";
-    CLog(@"locked, forcing cooler OFF");
-    SetDesired(NO); // 期望状态同步改为关，后续充电触发也保持关
+    CLog(@"locked -> cooler OFF");
     PWCentral *c = [PWCentral shared];
     if (c.wchr) {
-        [c writeFrame:[NSData dataWithBytes:OFF_FRAME length:FRAME_LEN]]; // 已连接直接写
+        [c writeFrame:[NSData dataWithBytes:OFF_FRAME length:FRAME_LEN]];
     } else {
-        GuardTick(); // 未连接走扫描窗口，连上后自动施加OFF
+        c.pendingFrame = [NSData dataWithBytes:OFF_FRAME length:FRAME_LEN];
+        [c scanWindow];
     }
-}
-
-static void ChargingGuardCheck(void);
-
-static void OnLockStateEvent(void) {
-    LockStateChanged();   // 锁屏 → 强制关闭（独立条件）
-    ChargingGuardCheck(); // 充电+锁屏 → 恢复期望状态
-}
-
-static void ChargingGuardCheck(void) {
-    if (!g_guardEnabled) return;
-    if (!PowerConnected()) { CLog(@"power event: not on AC, skip"); return; }
-    if (ScreenUsable()) { CLog(@"power connected but unlocked+screen on, skip"); return; }
-    g_initiator = @"guard";
-    CLog(@"power connected while locked/dark, enforcing");
-    GuardTick();
 }
 
 static void StartServer(void) {
@@ -332,11 +258,8 @@ static void StartServer(void) {
         g_delegate = [[BuildDelegateClass() alloc] init];
         [PWCentral shared];
         StartServer();
-        // 充电事件触发守护：接电且锁屏/灭屏 → 立即压制；灭屏广播用于黑屏判断
-        CFRunLoopSourceRef iopsSrc = IOPSNotificationCreateRunLoopSource((IOPowerSourceCallbackType)ChargingGuardCheck, NULL);
-        if (iopsSrc) { CFRunLoopAddSource(CFRunLoopGetMain(), iopsSrc, kCFRunLoopDefaultMode); CFRelease(iopsSrc); CLog(@"IOPS notification armed"); }
-        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)OnLockStateEvent, CFSTR("com.apple.springboard.lockstate"), NULL, CFNotificationSuspensionBehaviorCoalesce);
-        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)ToggleDisplay, CFSTR("com.apple.iokit.hid.displayStatus"), NULL, CFNotificationSuspensionBehaviorCoalesce);
-        CLog(@"guard armed: charging+locked trigger");
+        // 锁屏事件 → 关散热器（唯一自动触发条件）
+        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)LockStateChanged, CFSTR("com.apple.springboard.lockstate"), NULL, CFNotificationSuspensionBehaviorCoalesce);
+        CLog(@"guard armed: lock->off");
     });
 }

@@ -244,9 +244,9 @@ static void GuardTick(void) {
 
 static void ChargingGuardCheck(void) {
     if (!g_guardEnabled) return;
-    if (ScreenUsable()) return; // 亮屏未锁不触发
     if (!PowerCharging()) return; // 未在充电不触发
-    CLog(@"charging detected while locked, enforcing");
+    if (ScreenUsable()) { CLog(@"charging but unlocked+screen on, skip"); return; } // 亮屏未锁不触发
+    CLog(@"charging detected while locked/dark, enforcing");
     GuardTick();
 }
 

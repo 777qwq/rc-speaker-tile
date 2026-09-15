@@ -40,6 +40,7 @@ static BOOL DesiredOn(void) {
 }
 
 static id g_delegate = nil;
+static NSString *g_initiator = @"?"; // 连接发起方：shortcut / guard
 
 @interface PWCentral : NSObject
 @property (strong, nonatomic) CBCentralManager *cm;
@@ -194,7 +195,6 @@ static Class BuildDelegateClass(void) {
 }
 
 static BOOL g_guardEnabled = YES;
-static NSString *g_initiator = @"?"; // 连接发起方：shortcut / guard
 
 static BOOL g_displayOn = YES;
 

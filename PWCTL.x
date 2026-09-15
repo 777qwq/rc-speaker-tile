@@ -244,17 +244,42 @@ static void GuardTick(void) {
     if (c.cm.state != CBManagerStatePoweredOn) return;
     [c.cm scanForPeripheralsWithServices:nil options:nil];
     c.scanning = YES;
-    g_initiator = @"guard";
-    CLog(@"guard scan window (charging trigger)");
+    CLog(@"guard scan window");
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         if (PWCentral.shared.scanning) { [PWCentral.shared.cm stopScan]; PWCentral.shared.scanning = NO; }
     });
+}
+
+static void LockStateChanged(void) {
+    if (!g_guardEnabled) return;
+    BOOL locked = NO;
+    id lockCtl = objc_getClass("SBLockStateController");
+    if (lockCtl) {
+        id inst = ((id(*)(id, SEL))objc_msgSend)(lockCtl, @selector(sharedInstance));
+        if (inst && [(id)inst respondsToSelector:@selector(isLocked)]) locked = ((BOOL(*)(id, SEL))objc_msgSend)(inst, @selector(isLocked));
+    }
+    if (!locked) return; // 解锁动作不处理
+    g_initiator = @"lock-off";
+    CLog(@"locked, forcing cooler OFF");
+    SetDesired(NO); // 期望状态同步改为关，后续充电触发也保持关
+    PWCentral *c = [PWCentral shared];
+    if (c.wchr) {
+        [c writeFrame:[NSData dataWithBytes:OFF_FRAME length:FRAME_LEN]]; // 已连接直接写
+    } else {
+        GuardTick(); // 未连接走扫描窗口，连上后自动施加OFF
+    }
+}
+
+static void OnLockStateEvent(void) {
+    LockStateChanged();   // 锁屏 → 强制关闭（独立条件）
+    ChargingGuardCheck(); // 充电+锁屏 → 恢复期望状态
 }
 
 static void ChargingGuardCheck(void) {
     if (!g_guardEnabled) return;
     if (!PowerConnected()) { CLog(@"power event: not on AC, skip"); return; }
     if (ScreenUsable()) { CLog(@"power connected but unlocked+screen on, skip"); return; }
+    g_initiator = @"guard";
     CLog(@"power connected while locked/dark, enforcing");
     GuardTick();
 }
@@ -308,7 +333,7 @@ static void StartServer(void) {
         // 充电事件触发守护：接电且锁屏/灭屏 → 立即压制；灭屏广播用于黑屏判断
         CFRunLoopSourceRef iopsSrc = IOPSNotificationCreateRunLoopSource((IOPowerSourceCallbackType)ChargingGuardCheck, NULL);
         if (iopsSrc) { CFRunLoopAddSource(CFRunLoopGetMain(), iopsSrc, kCFRunLoopDefaultMode); CFRelease(iopsSrc); CLog(@"IOPS notification armed"); }
-        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)ChargingGuardCheck, CFSTR("com.apple.springboard.lockstate"), NULL, CFNotificationSuspensionBehaviorCoalesce);
+        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)OnLockStateEvent, CFSTR("com.apple.springboard.lockstate"), NULL, CFNotificationSuspensionBehaviorCoalesce);
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)ToggleDisplay, CFSTR("com.apple.iokit.hid.displayStatus"), NULL, CFNotificationSuspensionBehaviorCoalesce);
         CLog(@"guard armed: charging+locked trigger");
     });

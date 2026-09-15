@@ -1,6 +1,7 @@
 #import <CoreBluetooth/CoreBluetooth.h>
-#import <objc/runtime.h>
 #import <UIKit/UIKit.h>
+#import <objc/runtime.h>
+#import <objc/message.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -18,7 +19,7 @@ static void CLog(NSString *msg) {
     fclose(f);
 }
 
-// 捕获的指令帧（2026-09-14 23:39 校准：打开=byte17 0x00，关闭=byte17 0x32）
+// 2026-09-14 23:39 校准：打开=byte17 0x00，关闭=byte17 0x32
 static const unsigned char ON_FRAME[]  = {0x20,0x01,0x16,0x00,0x00,0x00,0x00,0xff,0x00,0x00,0x00,0xff,0x00,0x00,0x00,0xff,0x03,0x01,0x00,0x01,0x02,0x22,0x01,0x01,0x00,0x5f};
 static const unsigned char OFF_FRAME[] = {0x20,0x01,0x16,0x00,0x00,0x00,0x00,0xff,0x00,0x00,0x00,0xff,0x00,0x00,0x00,0xff,0x03,0x01,0x32,0x01,0x02,0x20,0x01,0x00,0x00,0x8e};
 #define FRAME_LEN 26
@@ -33,18 +34,26 @@ static void SetDesired(BOOL on) {
 }
 static BOOL DesiredOn(void) {
     NSString *s = [NSString stringWithContentsOfFile:DesiredPath() encoding:NSUTF8StringEncoding error:nil];
-    return [s isEqualToString:@"1"]; // 文件不存在时默认=关（守护会压制来电自启动）
+    return [s isEqualToString:@"1"];
 }
 
-@interface PWCentral : NSObject <CBCentralManagerDelegate, CBPeripheralDelegate>
+@interface PWCentral : NSObject
 @property (strong, nonatomic) CBCentralManager *cm;
 @property (strong, nonatomic) CBPeripheral *periph;
 @property (strong, nonatomic) CBCharacteristic *wchr;
 @property (copy, nonatomic) void (^onReady)(void);
 @property (assign, nonatomic) BOOL scanning;
 + (PWCentral *)shared;
+- (void)cmDidUpdateState:(CBCentralManager *)cm;
+- (void)cmDidDiscover:(CBCentralManager *)cm p:(CBPeripheral *)p adv:(NSDictionary *)adv rssi:(NSNumber *)rssi;
+- (void)cmDidConnect:(CBCentralManager *)cm p:(CBPeripheral *)p;
+- (void)cmDidFail:(CBCentralManager *)cm p:(CBPeripheral *)p;
+- (void)cmDidDisconnect:(CBCentralManager *)cm p:(CBPeripheral *)p;
+- (void)pDidDiscoverServices:(CBPeripheral *)p;
+- (void)pDidDiscoverChars:(CBPeripheral *)p;
 - (void)applyDesired;
 - (void)writeFrame:(NSData *)d;
+- (void)requestState:(BOOL)on reply:(void (^)(NSString *line))reply;
 @end
 
 @implementation PWCentral
@@ -58,79 +67,60 @@ static BOOL DesiredOn(void) {
 
 - (instancetype)init {
     if ((self = [super init])) {
-        _cm = [[CBCentralManager alloc] initWithDelegate:self queue:nil];
+        _cm = [[CBCentralManager alloc] initWithDelegate:g_delegate queue:nil];
         CLog(@"central init");
     }
     return self;
 }
 
-- (void)centralManagerDidUpdateState:(CBCentralManager *)central {
+- (void)cmDidUpdateState:(CBCentralManager *)central {
     CLog([NSString stringWithFormat:@"cm state=%ld", (long)central.state]);
 }
 
-- (void)centralManager:(CBCentralManager *)central didDiscoverPeripheral:(CBPeripheral *)peripheral advertisementData:(NSDictionary<NSString *,id> *)advertisementData RSSI:(NSNumber *)RSSI {
+- (void)cmDidDiscover:(CBCentralManager *)central p:(CBPeripheral *)peripheral adv:(NSDictionary *)adv rssi:(NSNumber *)RSSI {
     NSString *nm = (peripheral.name ?: @"").lowercaseString;
-    if (![nm containsString:@"b2max"]) return; // 只关心散热器，其他设备不记日志
+    if (![nm containsString:@"b2max"]) return;
     CLog([NSString stringWithFormat:@"guard discovered B2MAX rssi=%@", RSSI]);
     if (self.periph) return;
     self.periph = peripheral;
-    peripheral.delegate = self;
+    peripheral.delegate = g_delegate;
     [central stopScan];
     self.scanning = NO;
     [central connectPeripheral:peripheral options:nil];
     CLog(@"guard connecting");
 }
 
-- (void)centralManager:(CBCentralManager *)central didFailToConnectPeripheral:(CBPeripheral *)peripheral error:(NSError *)error {
+- (void)cmDidFail:(CBCentralManager *)central p:(CBPeripheral *)peripheral {
     CLog(@"connect failed");
     self.periph = nil;
 }
 
-- (void)centralManager:(CBCentralManager *)central didConnectPeripheral:(CBPeripheral *)peripheral {
+- (void)cmDidConnect:(CBCentralManager *)central p:(CBPeripheral *)peripheral {
     CLog(@"connected, discovering");
     [peripheral discoverServices:@[[CBUUID UUIDWithString:SVC_UUID]]];
 }
 
-- (void)peripheral:(CBPeripheral *)peripheral didDisconnectPeripheral:(NSError *)error {
+- (void)cmDidDisconnect:(CBCentralManager *)central p:(CBPeripheral *)peripheral {
     CLog(@"disconnected (guard will re-enforce)");
     self.wchr = nil;
     self.periph = nil;
 }
 
-- (void)peripheral:(CBPeripheral *)peripheral didDiscoverServices:(NSError *)error {
+- (void)pDidDiscoverServices:(CBPeripheral *)peripheral {
+    CLog(@"services discovered");
     [peripheral discoverCharacteristics:@[[CBUUID UUIDWithString:CHR_UUID]] forService:peripheral.services.firstObject];
 }
 
-- (void)peripheral:(CBPeripheral *)peripheral didDiscoverCharacteristicsForService:(CBService *)service error:(NSError *)error {
-    for (CBCharacteristic *c in service.characteristics) {
-        if ([c.UUID.UUIDString isEqualToString:CHR_UUID]) {
-            self.wchr = c;
-            CLog(@"write characteristic ready");
+- (void)pDidDiscoverChars:(CBPeripheral *)peripheral {
+    for (CBService *svc in peripheral.services) {
+        for (CBCharacteristic *c in svc.characteristics) {
+            if ([c.UUID.UUIDString isEqualToString:CHR_UUID]) {
+                self.wchr = c;
+                CLog(@"write characteristic ready");
+            }
         }
     }
     if (self.wchr && self.onReady) { void (^cb)(void) = self.onReady; self.onReady = nil; cb(); }
-}
-
-- (void)peripheral:(CBPeripheral *)peripheral didDiscoverIncludedServicesForService:(CBService *)service error:(NSError *)error {
-    CLog(@"included services discovered");
-}
-- (void)peripheral:(CBPeripheral *)peripheral didUpdateValueForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error {
-    CLog(@"value updated");
-}
-- (void)peripheral:(CBPeripheral *)peripheral didUpdateNotificationStateForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error {
-    CLog(@"notif state updated");
-}
-- (void)peripheral:(CBPeripheral *)peripheral didReadRSSI:(NSNumber *)RSSI error:(NSError *)error {
-    CLog(@"rssi read");
-}
-- (void)peripheral:(CBPeripheral *)peripheral didModifyServices:(NSArray<CBUUID *> *)invalidatedServices {
-    CLog(@"services modified");
-}
-- (void)centralManager:(CBCentralManager *)central willRestoreState:(NSDictionary<NSString *,id> *)state {
-    CLog(@"will restore state");
-}
-- (void)peripheral:(CBPeripheral *)peripheral didWriteValueForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error {
-    CLog(error ? @"write err" : @"write ok");
 }
 
 - (void)writeFrame:(NSData *)d {
@@ -160,7 +150,7 @@ static BOOL DesiredOn(void) {
             [self.cm scanForPeripheralsWithServices:nil options:nil];
             self.scanning = YES;
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                if (self.scanning) { [self.cm stopScan]; self.scanning = NO; }
+                if (PWCentral.shared.scanning) { [PWCentral.shared.cm stopScan]; PWCentral.shared.scanning = NO; }
             });
         }
     } else {
@@ -171,34 +161,36 @@ static BOOL DesiredOn(void) {
 
 @end
 
-static BOOL g_guardEnabled = YES;
-
-static BOOL g_displayOn = YES;
-
-static void ToggleDisplay(void) { g_displayOn = !g_displayOn; }
-
-#import <objc/message.h>
-
-static BOOL ScreenUsable(void) {
-    BOOL locked = NO;
-    id lockCtl = objc_getClass("SBLockStateController");
-    if (lockCtl) {
-        id inst = ((id(*)(id, SEL))objc_msgSend)(lockCtl, @selector(sharedInstance));
-        if (inst && [(id)inst respondsToSelector:@selector(isLocked)]) locked = ((BOOL(*)(id, SEL))objc_msgSend)(inst, @selector(isLocked));
-    }
-    if (locked) return NO;
-    BOOL screenOn = g_displayOn;
-    id blc = objc_getClass("SBBacklightController");
-    if (blc) {
-        id inst = ((id(*)(id, SEL))objc_msgSend)(blc, @selector(sharedInstance));
-        if (inst && [(id)inst respondsToSelector:@selector(backlightLevel)]) screenOn = (((float(*)(id, SEL))objc_msgSend)(inst, @selector(backlightLevel)) > 0);
-    }
-    return screenOn;
+static id g_delegate = nil;
+static Class BuildDelegateClass(void) {
+    static Class cls = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        cls = objc_allocateClassPair([NSObject class], "PWBleDelegate", 0);
+        class_addMethod(cls, @selector(centralManagerDidUpdateState:), imp_implementationWithBlock(^(id s, CBCentralManager *cm){ [[PWCentral shared] cmDidUpdateState:cm]; }), "v@:@");
+        class_addMethod(cls, @selector(centralManager:didDiscoverPeripheral:advertisementData:RSSI:), imp_implementationWithBlock(^(id s, CBCentralManager *cm, CBPeripheral *p, NSDictionary *adv, NSNumber *rssi){ [[PWCentral shared] cmDidDiscover:cm p:p adv:adv rssi:rssi]; }), "v@:@@@@");
+        class_addMethod(cls, @selector(centralManager:didConnectPeripheral:), imp_implementationWithBlock(^(id s, CBCentralManager *cm, CBPeripheral *p){ [[PWCentral shared] cmDidConnect:cm p:p]; }), "v@:@@");
+        class_addMethod(cls, @selector(centralManager:didFailToConnectPeripheral:error:), imp_implementationWithBlock(^(id s, CBCentralManager *cm, CBPeripheral *p, NSError *e){ [[PWCentral shared] cmDidFail:cm p:p]; }), "v@:@@@");
+        class_addMethod(cls, @selector(centralManager:didDisconnectPeripheral:error:), imp_implementationWithBlock(^(id s, CBCentralManager *cm, CBPeripheral *p, NSError *e){ [[PWCentral shared] cmDidDisconnect:cm p:p]; }), "v@:@@@");
+        class_addMethod(cls, @selector(centralManager:willRestoreState:), imp_implementationWithBlock(^(id s, CBCentralManager *cm, NSDictionary *st){ }), "v@:@");
+        class_addMethod(cls, @selector(peripheral:didDiscoverServices:), imp_implementationWithBlock(^(id s, CBPeripheral *p, NSError *e){ [[PWCentral shared] pDidDiscoverServices:p]; }), "v@:@@@");
+        class_addMethod(cls, @selector(peripheral:didDiscoverIncludedServicesForService:error:), imp_implementationWithBlock(^(id s, CBPeripheral *p, CBService *svc, NSError *e){ }), "v@:@@@");
+        class_addMethod(cls, @selector(peripheral:didDiscoverCharacteristicsForService:error:), imp_implementationWithBlock(^(id s, CBPeripheral *p, CBService *svc, NSError *e){ [[PWCentral shared] pDidDiscoverChars:p]; }), "v@:@@@");
+        class_addMethod(cls, @selector(peripheral:didUpdateValueForCharacteristic:error:), imp_implementationWithBlock(^(id s, CBPeripheral *p, CBCharacteristic *c, NSError *e){ }), "v@:@@@");
+        class_addMethod(cls, @selector(peripheral:didWriteValueForCharacteristic:error:), imp_implementationWithBlock(^(id s, CBPeripheral *p, CBCharacteristic *c, NSError *e){ CLog(e ? @"write err" : @"write ok"); }), "v@:@@@");
+        class_addMethod(cls, @selector(peripheral:didUpdateNotificationStateForCharacteristic:error:), imp_implementationWithBlock(^(id s, CBPeripheral *p, CBCharacteristic *c, NSError *e){ }), "v@:@@@");
+        class_addMethod(cls, @selector(peripheral:didReadRSSI:error:), imp_implementationWithBlock(^(id s, CBPeripheral *p, NSNumber *rssi, NSError *e){ }), "v@:@@");
+        class_addMethod(cls, @selector(peripheral:didModifyServices:), imp_implementationWithBlock(^(id s, CBPeripheral *p, NSArray *inv){ }), "v@:@");
+        objc_registerClassPair(cls);
+    });
+    return cls;
 }
+
+static BOOL g_scanning = NO;
+static BOOL g_guardEnabled = YES;
 
 static void GuardTick(void) {
     if (!g_guardEnabled) return;
-    if (ScreenUsable()) return;
     PWCentral *c = [PWCentral shared];
     if (c.periph || c.scanning) return;
     if (c.cm.state != CBManagerStatePoweredOn) return;
@@ -206,7 +198,7 @@ static void GuardTick(void) {
     c.scanning = YES;
     CLog(@"guard scan window");
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (c.scanning) { [c.cm stopScan]; c.scanning = NO; }
+        if (PWCentral.shared.scanning) { [PWCentral.shared.cm stopScan]; PWCentral.shared.scanning = NO; }
     });
 }
 
@@ -249,17 +241,14 @@ static void StartServer(void) {
     });
 }
 
+static id g_delegate = nil;
+
 %ctor {
     %init;
-    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)ToggleDisplay, CFSTR("com.apple.iokit.hid.displayStatus"), NULL, CFNotificationSuspensionBehaviorCoalesce);
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         CLog(@"ctl loaded");
+        g_delegate = [[BuildDelegateClass() alloc] init];
         [PWCentral shared];
         StartServer();
-        // 守护扫描窗口：每15秒扫3秒，仅锁屏时扫描（解锁时不打扰）
-        dispatch_source_t guardTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
-        dispatch_source_set_timer(guardTimer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10.0 * NSEC_PER_SEC)), 15ull * NSEC_PER_SEC, 2ull * NSEC_PER_SEC);
-        dispatch_source_set_event_handler(guardTimer, ^{ GuardTick(); });
-        dispatch_resume(guardTimer);
     });
 }

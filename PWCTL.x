@@ -43,7 +43,7 @@ static id g_delegate = nil;
 @property (strong, nonatomic) CBCentralManager *cm;
 @property (strong, nonatomic) CBPeripheral *periph;
 @property (strong, nonatomic) CBCharacteristic *wchr;
-@property (copy, nonatomic) void (^onReady)(void);
+@property (copy, nonatomic) void (^pendingReply)(NSString *line);
 @property (assign, nonatomic) BOOL scanning;
 + (PWCentral *)shared;
 - (void)cmDidUpdateState:(CBCentralManager *)cm;
@@ -122,7 +122,10 @@ static id g_delegate = nil;
             }
         }
     }
-    if (self.wchr && self.onReady) { void (^cb)(void) = self.onReady; self.onReady = nil; cb(); }
+    if (self.wchr) {
+        [self applyDesired]; // 常驻逻辑：每次连接/重连成功，自动恢复期望状态
+        if (self.pendingReply) { void (^r)(NSString *) = self.pendingReply; self.pendingReply = nil; r(@"ok"); }
+    }
 }
 
 - (void)writeFrame:(NSData *)d {
@@ -147,7 +150,7 @@ static id g_delegate = nil;
     NSData *frame = [NSData dataWithBytes:(on ? ON_FRAME : OFF_FRAME) length:FRAME_LEN];
     if (!self.wchr) {
         CLog(@"not connected, connecting first");
-        self.onReady = ^{ [[PWCentral shared] applyDesired]; if (reply) reply(@"ok"); };
+        self.pendingReply = reply;
         if (self.cm.state == CBManagerStatePoweredOn && !self.periph && !self.scanning) {
             [self.cm scanForPeripheralsWithServices:nil options:nil];
             self.scanning = YES;

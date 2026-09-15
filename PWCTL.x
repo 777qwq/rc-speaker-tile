@@ -152,7 +152,6 @@ static BOOL DesiredOn(void) {
 
 @end
 
-static BOOL g_scanning = NO;
 static BOOL g_guardEnabled = YES;
 
 static void GuardTick(void) {

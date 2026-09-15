@@ -1,4 +1,5 @@
 #import <CoreBluetooth/CoreBluetooth.h>
+#import <objc/runtime.h>
 #import <UIKit/UIKit.h>
 #include <stdio.h>
 #include <string.h>
@@ -156,6 +157,14 @@ static BOOL g_guardEnabled = YES;
 
 static void GuardTick(void) {
     if (!g_guardEnabled) return;
+    // 仅锁屏时扫描：解锁状态下不打扰
+    id lockCtl = objc_getClass("SBLockStateController");
+    if (lockCtl) {
+        BOOL locked = NO;
+        id inst = [(id)lockCtl sharedInstance];
+        if (inst && [inst respondsToSelector:@selector(isLocked)]) locked = [inst isLocked];
+        if (!locked) return;
+    }
     PWCentral *c = [PWCentral shared];
     if (c.periph || c.scanning) return;
     if (c.cm.state != CBManagerStatePoweredOn) return;
@@ -212,9 +221,9 @@ static void StartServer(void) {
         CLog(@"ctl loaded");
         [PWCentral shared];
         StartServer();
-        // 守护扫描窗口：每30分钟扫3秒（超低功耗，来电后最多30分钟内压制）
+        // 守护扫描窗口：每15秒扫3秒，仅锁屏时扫描（解锁时不打扰）
         dispatch_source_t guardTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
-        dispatch_source_set_timer(guardTimer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30.0 * NSEC_PER_SEC)), 1800ull * NSEC_PER_SEC, 60ull * NSEC_PER_SEC);
+        dispatch_source_set_timer(guardTimer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10.0 * NSEC_PER_SEC)), 15ull * NSEC_PER_SEC, 2ull * NSEC_PER_SEC);
         dispatch_source_set_event_handler(guardTimer, ^{ GuardTick(); });
         dispatch_resume(guardTimer);
     });

@@ -155,16 +155,30 @@ static BOOL DesiredOn(void) {
 
 static BOOL g_guardEnabled = YES;
 
-static void GuardTick(void) {
-    if (!g_guardEnabled) return;
-    // 仅锁屏时扫描：解锁状态下不打扰
+static BOOL g_displayOn = YES;
+
+static void ToggleDisplay(void) { g_displayOn = !g_displayOn; }
+
+static BOOL ScreenUsable(void) {
+    BOOL locked = NO;
     id lockCtl = objc_getClass("SBLockStateController");
     if (lockCtl) {
-        BOOL locked = NO;
         id inst = [(id)lockCtl sharedInstance];
         if (inst && [inst respondsToSelector:@selector(isLocked)]) locked = [inst isLocked];
-        if (!locked) return;
     }
+    if (locked) return NO;
+    BOOL screenOn = g_displayOn;
+    id blc = objc_getClass("SBBacklightController");
+    if (blc) {
+        id inst = [(id)blc sharedInstance];
+        if (inst && [inst respondsToSelector:@selector(backlightLevel)]) screenOn = ([inst backlightLevel] > 0);
+    }
+    return screenOn;
+}
+
+static void GuardTick(void) {
+    if (!g_guardEnabled) return;
+    if (ScreenUsable()) return;
     PWCentral *c = [PWCentral shared];
     if (c.periph || c.scanning) return;
     if (c.cm.state != CBManagerStatePoweredOn) return;
@@ -217,6 +231,7 @@ static void StartServer(void) {
 
 %ctor {
     %init;
+    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)ToggleDisplay, CFSTR("com.apple.iokit.hid.displayStatus"), NULL, CFNotificationSuspensionBehaviorCoalesce);
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         CLog(@"ctl loaded");
         [PWCentral shared];

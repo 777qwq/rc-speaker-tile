@@ -10,7 +10,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define PWCTL_LOG 1 // 诊断轮：日志开启
+#define PWCTL_LOG 0 // 定版：日志关闭；排障时改为1重新编译
 
 static void CLog(NSString *msg) {
     if (!PWCTL_LOG) return;

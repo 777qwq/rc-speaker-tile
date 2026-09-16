@@ -33,6 +33,42 @@ static id g_delegate = nil;
 static NSString *g_initiator = @"?"; // 连接发起方：shortcut / lock-off / power-off
 static BOOL g_guardEnabled = YES;
 static BOOL g_screenOn = YES; // displayStatus广播跟踪（替代不可靠的isLocked查询）
+static NSString *g_lockShortcut = @"";   // 锁屏时运行的快捷指令名（空=禁用）
+static NSString *g_unlockShortcut = @""; // 解锁时运行的快捷指令名（空=禁用）
+
+static NSString *ConfigPath(void) {
+    return @"/var/mobile/Library/Preferences/com.pw.ctl.plist";
+}
+
+static void SaveConfig(void) {
+    NSMutableDictionary *d = [NSMutableDictionary dictionary];
+    if (g_lockShortcut.length) d[@"lockShortcut"] = g_lockShortcut;
+    if (g_unlockShortcut.length) d[@"unlockShortcut"] = g_unlockShortcut;
+    [d writeToFile:ConfigPath() atomically:YES];
+    CLog([NSString stringWithFormat:@"config saved: lock=%@ unlock=%@", g_lockShortcut, g_unlockShortcut]);
+}
+
+static void LoadConfig(void) {
+    NSDictionary *d = [NSDictionary dictionaryWithContentsOfFile:ConfigPath()];
+    if (d) {
+        NSString *l = d[@"lockShortcut"];
+        NSString *u = d[@"unlockShortcut"];
+        if (l) g_lockShortcut = [l copy];
+        if (u) g_unlockShortcut = [u copy];
+    }
+    CLog([NSString stringWithFormat:@"config loaded: lock=%@ unlock=%@", g_lockShortcut, g_unlockShortcut]);
+}
+
+static void RunShortcut(NSString *name) {
+    if (name.length == 0) return;
+    NSString *enc = [name stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
+    NSString *urlStr = [NSString stringWithFormat:@"shortcuts://run-shortcut?name=%@", enc];
+    NSURL *u = [NSURL URLWithString:urlStr];
+    if (!u) { CLog(@"bad shortcut url"); return; }
+    [[UIApplication sharedApplication] openURL:u options:@{} completionHandler:^(BOOL ok) {
+        CLog([NSString stringWithFormat:@"run shortcut '%@': %@", name, ok ? @"ok" : @"failed"]);
+    }];
+}
 
 static void ToggleScreen(void) {
     g_screenOn = !g_screenOn;
@@ -227,11 +263,18 @@ static void LockStateChanged(void) {
     if (!g_guardEnabled) return;
     CLog(@"lockstate event received");
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (!g_guardEnabled) return;
-        if (g_screenOn) { CLog(@"screen on = unlock action, ignore"); return; } // 亮=解锁动作
-        g_initiator = @"lock-off";
-        CLog(@"locked (screen off) -> cooler OFF");
-        ForceOffNow();
+        if (g_screenOn) {
+            // 解锁动作
+            if (g_unlockShortcut.length) { CLog(@"unlock -> run shortcut"); RunShortcut(g_unlockShortcut); }
+            return;
+        }
+        // 锁屏动作
+        if (g_guardEnabled) {
+            g_initiator = @"lock-off";
+            CLog(@"locked (screen off) -> cooler OFF");
+            ForceOffNow();
+        }
+        if (g_lockShortcut.length) { CLog(@"lock -> run shortcut"); RunShortcut(g_lockShortcut); }
     });
 }
 
@@ -287,6 +330,25 @@ static void StartServer(void) {
             } else if (strstr(buf, "/guard?on=1")) {
                 g_guardEnabled = YES;
                 CLog(@"guard enabled");
+            } else if (strstr(buf, "/shortcuts?")) {
+                char params[512] = {0};
+                const char *q = strstr(buf, "/shortcuts?") + strlen("/shortcuts?");
+                sscanf(q, "%511[^ ]", params);
+                NSString *qs = [NSString stringWithUTF8String:params];
+                NSMutableDictionary *kv = [NSMutableDictionary dictionary];
+                for (NSString *pair in [qs componentsSeparatedByString:@"&"]) {
+                    NSRange eq = [pair rangeOfString:@"="];
+                    if (eq.location == NSNotFound || eq.location == 0) continue;
+                    NSString *k = [pair substringToIndex:eq.location];
+                    NSString *v = [[pair substringFromIndex:eq.location + 1] stringByRemovingPercentEncoding];
+                    if (v) kv[k] = v;
+                }
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    if (kv[@"lock"]) g_lockShortcut = [kv[@"lock"] copy];
+                    if (kv[@"unlock"]) g_unlockShortcut = [kv[@"unlock"] copy];
+                    if (kv[@"clear"]) { g_lockShortcut = @""; g_unlockShortcut = @""; }
+                    SaveConfig();
+                });
             }
             write(cfd, resp, strlen(resp));
             close(cfd);
@@ -298,6 +360,7 @@ static void StartServer(void) {
     %init;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         CLog(@"ctl loaded");
+        LoadConfig();
         g_delegate = [[BuildDelegateClass() alloc] init];
         [PWCentral shared];
         StartServer();

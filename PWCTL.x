@@ -356,8 +356,31 @@ static void StartServer(void) {
     });
 }
 
+static void StartShortcutsRecon(void) {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        FILE *f = fopen("/var/mobile/pw_recon.log", "w");
+        if (!f) return;
+        unsigned int count = 0;
+        Class *classes = objc_copyClassList(&count);
+        unsigned int hits = 0;
+        for (unsigned int i = 0; i < count; i++) {
+            const char *nm = class_getName(classes[i]);
+            if (strstr(nm, "Trigger") || strstr(nm, "Automation") || strstr(nm, "Picker")) {
+                fprintf(f, "%s\n", nm);
+                hits++;
+            }
+        }
+        fprintf(f, "--- total classes: %u, hits: %u\n", count, hits);
+        free(classes);
+        fclose(f);
+    });
+}
+
 %ctor {
     %init;
+    NSString *bid = [[NSBundle mainBundle] bundleIdentifier];
+    if ([bid isEqualToString:@"com.apple.shortcuts"]) { StartShortcutsRecon(); return; } // 侦察模式
+    if (![bid isEqualToString:@"com.apple.springboard"]) return; // 只在SpringBoard跑主逻辑
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         CLog(@"ctl loaded");
         LoadConfig();

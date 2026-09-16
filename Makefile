@@ -8,7 +8,8 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = PWCTL
 PWCTL_FILES = PWCTL.x
-PWCTL_FRAMEWORKS = CoreBluetooth UIKit
+PWCTL_FRAMEWORKS = CoreBluetooth UIKit IOKit
 PWCTL_LDFLAGS = -undefined dynamic_lookup
+PWCTL_CFLAGS = -fobjc-arc
 
 include $(THEOS_MAKE_PATH)/tweak.mk
